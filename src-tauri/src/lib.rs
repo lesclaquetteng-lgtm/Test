@@ -3,8 +3,8 @@ use std::{env, path::PathBuf, process::Command};
 use tauri::{Emitter, Manager};
 
 pub(crate) mod downloader;
-pub(crate) mod mojang;
 pub(crate) mod launch;
+pub(crate) mod mojang;
 pub(crate) mod natives;
 pub(crate) mod performance;
 
@@ -149,7 +149,15 @@ async fn launch_minecraft(
         .path()
         .app_cache_dir()
         .map_err(|error| format!("Unable to resolve NOVA cache directory: {error}"))?;
-    launch::launch_instance(app, data_root, cache_root, instance_id, player_name, memory_mb).await
+    launch::launch_instance(
+        app,
+        data_root,
+        cache_root,
+        instance_id,
+        player_name,
+        memory_mb,
+    )
+    .await
 }
 
 #[tauri::command]
