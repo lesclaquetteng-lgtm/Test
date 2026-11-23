@@ -4,6 +4,7 @@ use tauri::{Emitter, Manager};
 
 pub(crate) mod downloader;
 pub(crate) mod mojang;
+pub(crate) mod launch;
 pub(crate) mod natives;
 pub(crate) mod performance;
 
@@ -133,6 +134,34 @@ async fn install_vanilla_version(
     result
 }
 
+#[tauri::command]
+async fn launch_minecraft(
+    app: tauri::AppHandle,
+    instance_id: String,
+    player_name: String,
+    memory_mb: u32,
+) -> Result<launch::LaunchSession, String> {
+    let data_root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Unable to resolve NOVA data directory: {error}"))?;
+    let cache_root = app
+        .path()
+        .app_cache_dir()
+        .map_err(|error| format!("Unable to resolve NOVA cache directory: {error}"))?;
+    launch::launch_instance(app, data_root, cache_root, instance_id, player_name, memory_mb).await
+}
+
+#[tauri::command]
+fn list_launch_sessions() -> Result<Vec<launch::LaunchSession>, String> {
+    launch::list_sessions()
+}
+
+#[tauri::command]
+fn stop_minecraft(instance_id: String) -> Result<(), String> {
+    launch::stop_instance(&instance_id)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -141,7 +170,10 @@ pub fn run() {
             get_performance_snapshot,
             get_minecraft_versions,
             list_installed_instances,
-            install_vanilla_version
+            install_vanilla_version,
+            launch_minecraft,
+            list_launch_sessions,
+            stop_minecraft
         ])
         .run(tauri::generate_context!())
         .expect("error while running NOVA Launcher");
