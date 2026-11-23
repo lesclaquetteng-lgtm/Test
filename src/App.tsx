@@ -11,6 +11,7 @@ import {
   Download,
   FolderOpen,
   Gamepad2,
+  Gauge,
   HardDrive,
   Layers3,
   LayoutDashboard,
@@ -30,7 +31,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-type Page = "overview" | "instances" | "modpacks" | "mods" | "downloads" | "settings";
+type Page = "overview" | "instances" | "modpacks" | "mods" | "downloads" | "performance" | "settings";
 
 type RuntimeStatus = {
   platform: string;
@@ -40,12 +41,27 @@ type RuntimeStatus = {
   minecraft_directory: string | null;
 };
 
+type PerformanceSnapshot = {
+  uptimeMs: number;
+  activeOperations: number;
+  peakOperations: number;
+  completedOperations: number;
+  totalOperationTimeMs: number;
+  downloadedBytes: number;
+  reusedBytes: number;
+  cacheHits: number;
+  cacheMisses: number;
+  verificationFailures: number;
+  cacheHitRateBasisPoints: number;
+};
+
 const NAVIGATION: { id: Page; label: string; icon: LucideIcon }[] = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "instances", label: "Instances", icon: Layers3 },
   { id: "modpacks", label: "Modpacks", icon: Package },
   { id: "mods", label: "Mods", icon: Puzzle },
-  { id: "downloads", label: "Downloads", icon: Download }
+  { id: "downloads", label: "Downloads", icon: Download },
+  { id: "performance", label: "Performance", icon: Gauge }
 ];
 
 const PAGE_INFO: Record<Page, { eyebrow: string; title: string; description: string }> = {
@@ -73,6 +89,11 @@ const PAGE_INFO: Record<Page, { eyebrow: string; title: string; description: str
     eyebrow: "TRANSFER CENTER",
     title: "Downloads",
     description: "Track installation tasks, updates and their verification status."
+  },
+  performance: {
+    eyebrow: "MEASURED, NOT GUESSED",
+    title: "Performance",
+    description: "Inspect native workload metrics and the optimization engine's measured activity."
   },
   settings: {
     eyebrow: "PREFERENCES",
@@ -111,6 +132,33 @@ function useDesktopRuntime() {
   }, [refresh]);
 
   return { runtime, checking, isDesktop, refresh };
+}
+
+function usePerformanceMetrics(isDesktop: boolean) {
+  const [snapshot, setSnapshot] = useState<PerformanceSnapshot | null>(null);
+  const [checking, setChecking] = useState(true);
+
+  const refresh = useCallback(async () => {
+    if (!isDesktop) {
+      setChecking(false);
+      return;
+    }
+    setChecking(true);
+    try {
+      setSnapshot(await invoke<PerformanceSnapshot>("get_performance_snapshot"));
+    } catch (error) {
+      console.error("Unable to read performance metrics:", error);
+      setSnapshot(null);
+    } finally {
+      setChecking(false);
+    }
+  }, [isDesktop]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  return { snapshot, checking, refresh };
 }
 
 function Sidebar({ active, onNavigate }: { active: Page; onNavigate: (page: Page) => void }) {
@@ -393,6 +441,93 @@ function EmptyPage({
   );
 }
 
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return String(bytes) + " B";
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return value.toFixed(1) + " " + units[unit];
+}
+
+function PerformanceStat({ icon: Icon, label, value, note }: {
+  icon: LucideIcon;
+  label: string;
+  value: string;
+  note: string;
+}) {
+  return (
+    <article className="performance-stat">
+      <div className="performance-stat-icon"><Icon size={17} /></div>
+      <div className="performance-stat-copy">
+        <span>{label}</span>
+        <strong>{value}</strong>
+        <small>{note}</small>
+      </div>
+    </article>
+  );
+}
+
+function PerformancePage({ snapshot, checking, isDesktop, onRefresh }: {
+  snapshot: PerformanceSnapshot | null;
+  checking: boolean;
+  isDesktop: boolean;
+  onRefresh: () => void;
+}) {
+  if (!isDesktop) {
+    return (
+      <EmptyPage
+        icon={Gauge}
+        eyebrow="NATIVE TELEMETRY"
+        title="Metrics need the desktop runtime."
+        description="Run NOVA as a Tauri application to read live native performance counters. Browser preview does not fabricate system metrics."
+        actionLabel="Back to overview"
+      />
+    );
+  }
+
+  const totalCacheRequests = (snapshot?.cacheHits ?? 0) + (snapshot?.cacheMisses ?? 0);
+  const hitRate = snapshot ? (snapshot.cacheHitRateBasisPoints / 100).toFixed(1) + "%" : "—";
+
+  return (
+    <div className="performance-content">
+      <div className="performance-toolbar">
+        <div>
+          <span className="section-eyebrow">NATIVE INSTRUMENTATION</span>
+          <p>Session counters from the Rust runtime. Values are real and remain zero until the related service is implemented.</p>
+        </div>
+        <button className="icon-button" onClick={onRefresh} disabled={checking} aria-label="Refresh performance metrics">
+          <RefreshCw size={16} className={checking ? "spin" : ""} />
+        </button>
+      </div>
+      <section className="performance-grid" aria-label="Performance counters">
+        <PerformanceStat icon={Activity} label="ACTIVE OPERATIONS" value={snapshot ? String(snapshot.activeOperations) : "—"} note="Native tasks currently tracked" />
+        <PerformanceStat icon={Gauge} label="PEAK CONCURRENCY" value={snapshot ? String(snapshot.peakOperations) : "—"} note="Highest simultaneous tracked tasks" />
+        <PerformanceStat icon={CheckCircle2} label="COMPLETED OPERATIONS" value={snapshot ? String(snapshot.completedOperations) : "—"} note="Tracked task scopes completed" />
+        <PerformanceStat icon={Layers3} label="CACHE HIT RATE" value={hitRate} note={totalCacheRequests ? String(totalCacheRequests) + " measured lookups" : "No cache lookups recorded"} />
+      </section>
+      <section className="panel performance-panel">
+        <div className="panel-heading">
+          <div><span className="section-eyebrow">SESSION TELEMETRY</span><h2>Runtime breakdown</h2></div>
+          <span className="telemetry-state"><i /> {checking ? "REFRESHING" : snapshot ? "CONNECTED" : "UNAVAILABLE"}</span>
+        </div>
+        <div className="performance-rows">
+          <div className="settings-row"><div className="settings-row-copy"><strong>Session uptime</strong><span>Since native metrics were initialized</span></div><div className="settings-row-value">{snapshot ? (snapshot.uptimeMs / 1000).toFixed(1) + " s" : "—"}</div></div>
+          <div className="settings-row"><div className="settings-row-copy"><strong>Cumulative operation time</strong><span>Sum of tracked operation durations, not launch time</span></div><div className="settings-row-value">{snapshot ? String(snapshot.totalOperationTimeMs) + " ms" : "—"}</div></div>
+          <div className="settings-row"><div className="settings-row-copy"><strong>Downloaded bytes</strong><span>Bytes transferred by instrumented download services</span></div><div className="settings-row-value">{snapshot ? formatBytes(snapshot.downloadedBytes) : "—"}</div></div>
+          <div className="settings-row"><div className="settings-row-copy"><strong>Reused bytes</strong><span>Bytes served from verified local content</span></div><div className="settings-row-value">{snapshot ? formatBytes(snapshot.reusedBytes) : "—"}</div></div>
+          <div className="settings-row"><div className="settings-row-copy"><strong>Integrity verification failures</strong><span>Failed artifact checks reported by the engine</span></div><div className={snapshot?.verificationFailures ? "value-tag" : "value-tag success"}>{snapshot ? snapshot.verificationFailures : "—"}</div></div>
+        </div>
+        <p className="performance-disclaimer">This is native instrumentation, not an FPS benchmark. Download, cache and integrity counters become meaningful when those real engine services are connected.</p>
+      </section>
+    </div>
+  );
+}
+
 function SettingsPage({
   runtime,
   checking,
@@ -456,6 +591,7 @@ function SettingsPage({
 function App() {
   const [page, setPage] = useState<Page>("overview");
   const { runtime, checking, isDesktop, refresh } = useDesktopRuntime();
+  const performance = usePerformanceMetrics(isDesktop);
   const pageInfo = PAGE_INFO[page];
 
   return (
@@ -514,6 +650,9 @@ function App() {
                 actionLabel="Back to overview"
                 onAction={() => setPage("overview")}
               />
+            )}
+            {page === "performance" && (
+              <PerformancePage snapshot={performance.snapshot} checking={performance.checking} isDesktop={isDesktop} onRefresh={() => void performance.refresh()} />
             )}
             {page === "settings" && (
               <SettingsPage runtime={runtime} checking={checking} isDesktop={isDesktop} onRefresh={() => void refresh()} />
