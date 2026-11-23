@@ -73,6 +73,29 @@ fn safe_relative_path(raw: &str) -> Result<PathBuf, String> {
     Ok(path.to_path_buf())
 }
 
+fn safe_modpack_instance_path(raw: &str) -> Result<PathBuf, String> {
+    let path = safe_relative_path(raw)?;
+    let first = path
+        .components()
+        .next()
+        .and_then(|component| match component {
+            Component::Normal(value) => value.to_str(),
+            _ => None,
+        })
+        .ok_or_else(|| format!("Unsafe Modrinth instance path: {raw}"))?;
+
+    if ["versions", "natives"].iter().any(|reserved| first.eq_ignore_ascii_case(reserved)) {
+        return Err(format!("Modrinth pack cannot overwrite NOVA's reserved directory: {raw}"));
+    }
+    if [".nova-install.json", ".nova-install.json.new", ".nova-install.json.nova-backup"]
+        .iter()
+        .any(|reserved| path.to_string_lossy().eq_ignore_ascii_case(reserved))
+    {
+        return Err("Modrinth pack attempted to overwrite NOVA's instance marker".to_owned());
+    }
+    Ok(path)
+}
+
 fn safe_mod_filename(raw: &str) -> Result<String, String> {
     let path = safe_relative_path(raw)?;
     if path.components().count() != 1
@@ -1160,8 +1183,7 @@ fn safe_modpack_url(raw: &str) -> Result<String, String> {
     let trusted = host == "cdn.modrinth.com"
         || host == "github.com"
         || host == "raw.githubusercontent.com"
-        || host == "gitlab.com"
-        || host.ends_with(".gitlab.com");
+        || host == "gitlab.com";
     if url.scheme() != "https"
         || !trusted
         || !url.username().is_empty()
@@ -1230,22 +1252,33 @@ fn extract_mrpack_overrides(
     let file = std::fs::File::open(archive_path).map_err(|error| error.to_string())?;
     let mut archive = zip::ZipArchive::new(file)
         .map_err(|error| format!("Invalid Modrinth .mrpack archive: {error}"))?;
-    let mut copied_files = 0_usize;
-    let mut copied_bytes = 0_u64;
+    let mut selected_entries = Vec::new();
 
+    // Apply normal overrides first; client-overrides are the final client layer.
     for index in 0..archive.len() {
-        let mut entry = archive.by_index(index).map_err(|error| error.to_string())?;
+        let entry = archive.by_index(index).map_err(|error| error.to_string())?;
         if entry.is_dir() {
             continue;
         }
         let archive_name = entry.name().replace('\\', "/");
+        if archive_name.starts_with("overrides/") {
+            selected_entries.push((0_u8, index));
+        } else if archive_name.starts_with("client-overrides/") {
+            selected_entries.push((1_u8, index));
+        }
+    }
+    selected_entries.sort_unstable();
+
+    let mut copied_files = 0_usize;
+    let mut copied_bytes = 0_u64;
+    for (_, index) in selected_entries {
+        let mut entry = archive.by_index(index).map_err(|error| error.to_string())?;
+        let archive_name = entry.name().replace('\\', "/");
         let relative_name = archive_name
             .strip_prefix("overrides/")
-            .or_else(|| archive_name.strip_prefix("client-overrides/"));
-        let Some(relative_name) = relative_name else {
-            continue;
-        };
-        let relative = safe_relative_path(relative_name)?;
+            .or_else(|| archive_name.strip_prefix("client-overrides/"))
+            .ok_or_else(|| "Invalid Modrinth override entry".to_owned())?;
+        let relative = safe_modpack_instance_path(relative_name)?;
         let file_size = entry.size();
         if file_size > MAX_OVERRIDE_FILE
             || copied_bytes.saturating_add(file_size) > MAX_TOTAL_OVERRIDE_BYTES
@@ -1268,7 +1301,8 @@ fn extract_mrpack_overrides(
         std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
         let temporary = destination.with_extension("nova-tmp");
         let mut output = std::fs::File::create(&temporary).map_err(|error| error.to_string())?;
-        let copied = std::io::copy(&mut entry, &mut output).map_err(|error| error.to_string())?;
+        let mut bounded_entry = entry.take(file_size.saturating_add(1));
+        let copied = std::io::copy(&mut bounded_entry, &mut output).map_err(|error| error.to_string())?;
         if copied != file_size {
             let _ = std::fs::remove_file(&temporary);
             return Err("Modrinth override size changed during extraction".to_owned());
@@ -1483,9 +1517,11 @@ async fn install_modrinth_modpack_inner(
         .filter(|value| safe_identifier(value))
         .ok_or_else(|| "Modrinth pack does not declare a valid Minecraft version".to_owned())?
         .clone();
-    for unsupported in ["forge", "neoforge", "quilt-loader"] {
-        if index.dependencies.contains_key(unsupported) {
-            return Err(format!("This pack requires {unsupported}; this NOVA build currently supports Fabric packs only."));
+    for dependency in index.dependencies.keys() {
+        if !matches!(dependency.as_str(), "minecraft" | "fabric-loader") {
+            return Err(format!(
+                "This pack requires the unsupported {dependency} dependency; this NOVA build currently supports Fabric packs only."
+            ));
         }
     }
     let fabric_loader = index.dependencies.get("fabric-loader").cloned();
@@ -1562,9 +1598,9 @@ async fn install_modrinth_modpack_inner(
         if matches!(client_environment, "unsupported" | "optional") {
             continue;
         }
-        let relative = safe_relative_path(&entry.path)?;
+        let relative = safe_modpack_instance_path(&entry.path)?;
         let relative_string = relative.to_string_lossy().replace('\\', "/");
-        if !seen_paths.insert(relative_string.clone()) {
+        if !seen_paths.insert(relative_string.to_lowercase()) {
             return Err(format!(
                 "Modrinth pack contains a duplicate file path: {relative_string}"
             ));
