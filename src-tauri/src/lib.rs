@@ -251,7 +251,9 @@ pub fn run() {
             instance_manager::delete_instance,
             instance_manager::update_instance_settings,
             instance_manager::repair_instance,
-            instance_manager::open_instance_folder
+            instance_manager::open_instance_folder,
+            loaders::list_loader_versions_command,
+            loaders::install_loader
         ])
         .run(tauri::generate_context!())
         .expect("error while running NOVA Launcher");
