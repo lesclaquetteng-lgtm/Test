@@ -6,12 +6,10 @@ import {
   Activity,
   AlertCircle,
   ArrowRight,
-  Blocks,
   CheckCircle2,
   Cpu,
   Download,
   FolderOpen,
-  Gamepad2,
   Gauge,
   Layers3,
   Monitor,
@@ -25,8 +23,7 @@ import {
   Settings2,
   ShieldCheck,
   TerminalSquare,
-  UserRound,
-  Zap
+  UserRound
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
