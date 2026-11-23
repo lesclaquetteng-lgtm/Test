@@ -46,7 +46,7 @@ Planned modules:
 - accounts: Microsoft / Xbox / Minecraft authentication and secure token storage.
 - loaders: Fabric first, then Forge, NeoForge and Quilt.
 - content: Modrinth and CurseForge provider adapters, dependency and compatibility checks.
-- diagnostics: process lifecycle, log streaming and crash reports.
+- diagnostics: local hardware/runtime inventory, Java compatibility, instance integrity scans, bounded crash/log excerpts, automatic reports and user-triggered exports via the local reports folder.
 
 ## Data and filesystem boundaries
 
@@ -105,4 +105,4 @@ API keys and service credentials must follow the provider's terms and must not b
 - UI tests for navigation, loading, empty, error and success states.
 - Windows smoke tests before distributing a release.
 
-The current feature branch implements the desktop shell, asynchronous Java diagnostics, native performance counters, a verified-download transport, official Mojang version discovery and a first Vanilla installation pipeline. The installer validates the manifest and version metadata, verifies client/library/asset/native-archive artifacts, deduplicates shared assets and emits native progress events. Launch argument resolution, Java version selection and process lifecycle remain open; Microsoft authentication, mod loaders and content providers remain roadmap work.
+The current feature branch implements the desktop shell, native performance counters, a verified-download transport, official Mojang version discovery, a first Vanilla installation pipeline, launch argument resolution, Java major-version selection and native process lifecycle. The diagnostic engine inventories available Windows hardware data, examines Java candidates, verifies the client JAR, checks libraries/assets/native extraction, captures bounded sanitized logs and crash artifacts, and saves local JSON reports. Quick scans run on desktop startup; launch failures and abnormal process exits generate automatic reports. Deep scans hash all indexed asset objects and applicable libraries. Microsoft authentication, mod loaders, richer GPU telemetry and reproducible performance baselines remain roadmap work.
