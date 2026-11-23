@@ -1297,7 +1297,7 @@ function InstanceManagementCard({
               </label>
               <label><span>Available builds</span>
                 <select value={selectedLoaderVersion} onChange={(event) => setSelectedLoaderVersion(event.target.value)} disabled={loadingLoaderVersions || loaderVersions.length === 0}>
-                  {loaderVersions.map((release) => (
+                  {loaderVersions.slice(0, 60).map((release) => (
                     <option value={release.version} key={release.version}>
                       {release.displayVersion + (release.stable ? " · Stable" : " · Preview")}
                     </option>
