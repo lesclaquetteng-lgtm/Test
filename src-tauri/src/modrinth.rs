@@ -1353,7 +1353,10 @@ fn extract_mrpack_overrides(
     let mut copied_bytes = 0_u64;
     for (_, index) in selected_entries {
         let mut entry = archive.by_index(index).map_err(|error| error.to_string())?;
-        let archive_name = entry.name().replace('\\', "/");
+        let archive_name = entry
+            .name()
+            .map_err(|error| error.to_string())?
+            .replace('\\', "/");
         let relative_name = archive_name
             .strip_prefix("overrides/")
             .or_else(|| archive_name.strip_prefix("client-overrides/"))
