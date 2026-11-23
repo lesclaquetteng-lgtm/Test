@@ -365,7 +365,11 @@ pub(crate) async fn repair_instance(
     if !safe_id(&game_version) {
         return Err("This profile has an invalid base Minecraft version".to_owned());
     }
-    if original.loader.as_deref().is_some_and(|loader| !matches!(loader, "fabric" | "forge" | "neoforge")) {
+    if original
+        .loader
+        .as_deref()
+        .is_some_and(|loader| !matches!(loader, "fabric" | "forge" | "neoforge"))
+    {
         return Err(
             "Repair for this loader is not available yet. The instance was left unchanged."
                 .to_owned(),
@@ -421,7 +425,8 @@ pub(crate) fn open_instance_folder(
         .map_err(|error| error.to_string())?;
     let root = instance_root(&data_root, &instance_id)?;
     let instances_root = data_root.join("instances");
-    let canonical_instances = fs::canonicalize(&instances_root).map_err(|error| error.to_string())?;
+    let canonical_instances =
+        fs::canonicalize(&instances_root).map_err(|error| error.to_string())?;
     let canonical_root = fs::canonicalize(&root).map_err(|error| error.to_string())?;
     if !canonical_root.starts_with(&canonical_instances) || canonical_root == canonical_instances {
         return Err("Instance folder resolves outside NOVA's managed directory".to_owned());
@@ -454,7 +459,10 @@ pub(crate) fn open_instance_folder(
         command.arg(&root);
         command
     };
-    command.spawn().map(|_| ()).map_err(|error| format!("Unable to open instance folder: {error}"))
+    command
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("Unable to open instance folder: {error}"))
 }
 
 #[cfg(test)]
