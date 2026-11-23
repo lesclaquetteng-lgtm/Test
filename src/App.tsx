@@ -148,6 +148,7 @@ type DiagnosticReport = {
     crashReportExcerpt: string[];
     crashArtifactNames: string[];
   }[];
+  network: { name: string; host: string; statusCode: number | null; latencyMs: number | null; reachable: boolean; detail: string }[];
   checks: DiagnosticCheck[];
   recentProcessLogs: { timestampUnix: number; stream: string; line: string }[];
   reportPath: string;
@@ -1018,6 +1019,24 @@ function DiagnosticsPage({
                 ))}
               </div>
             )}
+          </section>
+
+          <section className="panel diagnostic-section">
+            <div className="panel-heading">
+              <div><span className="section-eyebrow">NETWORK PATH</span><h2>Mojang & Minecraft services</h2></div>
+              <span className="value-tag">{report.network.filter((endpoint) => endpoint.reachable).length}/{report.network.length} REACHABLE</span>
+            </div>
+            <div className="diagnostic-network-list">
+              {report.network.map((endpoint) => (
+                <div className="diagnostic-network-row" key={endpoint.host}>
+                  <span className={endpoint.reachable ? "network-state good" : "network-state bad"} />
+                  <div><strong>{endpoint.name}</strong><small>{endpoint.host}</small></div>
+                  <span className={endpoint.reachable ? "diagnostic-pill passed" : "diagnostic-pill warning"}>{endpoint.statusCode ? "HTTP " + endpoint.statusCode : "NO RESPONSE"}</span>
+                  <small>{endpoint.latencyMs === null ? "—" : endpoint.latencyMs + " ms"}</small>
+                </div>
+              ))}
+            </div>
+            <p className="diagnostic-network-note">These checks send only a small HTTP request to public Minecraft endpoints. They do not transmit your diagnostic report, account details or authentication tokens.</p>
           </section>
 
           <section className="panel diagnostic-section">
