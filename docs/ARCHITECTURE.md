@@ -40,7 +40,7 @@ Planned modules:
 - runtime: Java discovery, compatibility and installation.
 - minecraft: official version manifest, metadata, libraries, assets, natives and launch arguments.
 - instances: instance manifests, paths, import/export and isolation.
-- downloads: bounded concurrency, progress, cancellation and integrity verification.
+- downloads: a reusable Rust transport with global/per-host concurrency bounds, SHA-1 streaming verification, a bounded progress channel, selective retries and rollback-safe publication. Cancellation and HTTP range resume are still pending.
 - accounts: Microsoft / Xbox / Minecraft authentication and secure token storage.
 - loaders: Fabric first, then Forge, NeoForge and Quilt.
 - content: Modrinth and CurseForge provider adapters, dependency and compatibility checks.
@@ -102,4 +102,4 @@ API keys and service credentials must follow the provider's terms and must not b
 - UI tests for navigation, loading, empty, error and success states.
 - Windows smoke tests before distributing a release.
 
-The current project foundation only implements the desktop shell and Java/environment diagnostics. The modules above are design targets, not completed features.
+The current native foundation implements the desktop shell, asynchronous Java diagnostics, performance counters and a standalone verified-download transport. The downloader is not yet wired to Mojang's version manifest, instance installation or the UI. Authentication, loaders, content providers and the full launch pipeline remain roadmap work.
