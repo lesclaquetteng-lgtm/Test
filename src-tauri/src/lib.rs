@@ -1,7 +1,8 @@
 use serde::Serialize;
 use std::{env, path::PathBuf, process::Command};
 
-mod performance;
+pub(crate) mod downloader;
+pub(crate) mod performance;
 
 #[derive(Debug, Serialize)]
 struct RuntimeStatus {
