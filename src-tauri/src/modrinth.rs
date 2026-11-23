@@ -76,7 +76,10 @@ fn safe_relative_path(raw: &str) -> Result<PathBuf, String> {
 fn safe_mod_filename(raw: &str) -> Result<String, String> {
     let path = safe_relative_path(raw)?;
     if path.components().count() != 1
-        || path.extension().and_then(|ext| ext.to_str()) != Some("jar")
+        || !path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("jar"))
     {
         return Err(format!("Modrinth returned an invalid mod JAR name: {raw}"));
     }
@@ -809,6 +812,45 @@ async fn collect_required_versions(
     Ok(output)
 }
 
+fn hash_modrinth_file(path: &Path) -> Result<(String, String), String> {
+    let mut file = std::fs::File::open(path).map_err(|error| error.to_string())?;
+    let mut sha1 = Sha1::new();
+    let mut sha512 = Sha512::new();
+    let mut buffer = [0_u8; 128 * 1024];
+    loop {
+        let read = file.read(&mut buffer).map_err(|error| error.to_string())?;
+        if read == 0 {
+            break;
+        }
+        Sha1Digest::update(&mut sha1, &buffer[..read]);
+        Sha1Digest::update(&mut sha512, &buffer[..read]);
+    }
+    let to_hex = |bytes: &[u8]| {
+        bytes
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    };
+    Ok((to_hex(&sha1.finalize()), to_hex(&sha512.finalize())))
+}
+
+async fn verify_modrinth_file(
+    path: PathBuf,
+    expected_sha1: String,
+    expected_sha512: String,
+) -> Result<(), String> {
+    let (actual_sha1, actual_sha512) =
+        tokio::task::spawn_blocking(move || hash_modrinth_file(&path))
+            .await
+            .map_err(|error| format!("Mod verification worker failed: {error}"))??;
+    if !actual_sha1.eq_ignore_ascii_case(&expected_sha1)
+        || !actual_sha512.eq_ignore_ascii_case(&expected_sha512)
+    {
+        return Err("Modrinth JAR failed SHA-1 or SHA-512 verification".to_owned());
+    }
+    Ok(())
+}
+
 async fn install_modrinth_file(
     instance_root: &Path,
     file: &ModrinthFile,
@@ -817,52 +859,58 @@ async fn install_modrinth_file(
     total: usize,
 ) -> Result<String, String> {
     let file_name = safe_mod_filename(&file.filename)?;
-    if file.size == 0 || file.size > MAX_MOD_FILE_BYTES {
+    if file.size == 0 || file.size > 512 * 1024 * 1024 {
         return Err(format!(
-            "Modrinth file {} has an invalid size",
+            "Modrinth file {} exceeds NOVA's 512 MB mod-file limit",
             file.filename
         ));
     }
-    let sha1 = file.hashes.sha1.as_deref().ok_or_else(|| {
-        format!(
-            "Modrinth did not provide a SHA-1 checksum for {}",
-            file.filename
-        )
-    })?;
-    if !valid_sha1(sha1) {
-        return Err(format!(
-            "Modrinth supplied an invalid checksum for {}",
-            file.filename
-        ));
-    }
+    let sha1 = file
+        .hashes
+        .sha1
+        .as_deref()
+        .filter(|value| valid_sha1(value))
+        .ok_or_else(|| format!("Modrinth did not provide a valid SHA-1 checksum for {}", file.filename))?;
+    let sha512 = file
+        .hashes
+        .sha512
+        .as_deref()
+        .filter(|value| {
+            value.len() == 128 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+        })
+        .ok_or_else(|| format!("Modrinth did not provide a valid SHA-512 checksum for {}", file.filename))?;
+    let download_url = safe_modpack_url(&file.url)?;
 
     let destination = instance_root.join("mods").join(&file_name);
     if fs::try_exists(&destination)
         .await
         .map_err(|error| error.to_string())?
     {
-        let bytes = fs::read(&destination)
+        let existing_size = fs::metadata(&destination)
             .await
-            .map_err(|error| error.to_string())?;
-        let actual = {
-            let digest = Sha1::digest(&bytes);
-            digest
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect::<String>()
-        };
-        if !actual.eq_ignore_ascii_case(sha1) {
+            .map_err(|error| error.to_string())?
+            .len();
+        if existing_size != file.size {
             return Err(format!(
                 "A different file named {file_name} already exists. Remove it before installing this version."
             ));
         }
+        verify_modrinth_file(
+            destination,
+            sha1.to_ascii_lowercase(),
+            sha512.to_ascii_lowercase(),
+        )
+        .await
+        .map_err(|_| format!(
+            "A different or corrupted file named {file_name} already exists. Remove it before installing this version."
+        ))?;
         return Ok(file_name);
     }
 
     let outcome = download_verified(
         DownloadSpec {
-            url: file.url.clone(),
-            destination,
+            url: download_url,
+            destination: destination.clone(),
             expected_sha1: sha1.to_ascii_lowercase(),
             expected_size: Some(file.size),
         },
@@ -870,6 +918,17 @@ async fn install_modrinth_file(
     )
     .await
     .map_err(|error| format!("Unable to download {}: {error}", file.filename))?;
+
+    if let Err(error) = verify_modrinth_file(
+        destination.clone(),
+        sha1.to_ascii_lowercase(),
+        sha512.to_ascii_lowercase(),
+    )
+    .await
+    {
+        let _ = fs::remove_file(destination).await;
+        return Err(format!("Integrity verification failed for {}: {error}", file.filename));
+    }
 
     if let Some(sender) = progress {
         let _ = sender
