@@ -1730,6 +1730,10 @@ function ModrinthModpacksPage({ isDesktop, onNavigate }: {
   const [installingVersion, setInstallingVersion] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
+  const [oneClientVersions, setOneClientVersions] = useState<ModrinthVersion[]>([]);
+  const [oneClientExpanded, setOneClientExpanded] = useState(false);
+  const [loadingOneClient, setLoadingOneClient] = useState(false);
+  const [installingOneClient, setInstallingOneClient] = useState("");
 
   const installedPacks = instances.filter((instance) => instance.instanceType === "modpack");
 
@@ -1815,6 +1819,50 @@ function ModrinthModpacksPage({ isDesktop, onNavigate }: {
     }
   };
 
+  const loadOneClientVersions = async () => {
+    if (oneClientExpanded) {
+      setOneClientExpanded(false);
+      return;
+    }
+    setLoadingOneClient(true);
+    setError(null);
+    try {
+      const releases = await invoke<ModrinthVersion[]>("get_project_versions_command", {
+        projectId: ONECLIENT_PROJECT_ID,
+        gameVersion: null,
+        loader: null
+      });
+      const installable = releases.filter((version) =>
+        version.files.some((file) => file.filename.toLowerCase().endsWith(".mrpack"))
+        && (version.loaders.length === 0 || version.loaders.includes("fabric"))
+      );
+      setOneClientVersions(installable);
+      setOneClientExpanded(true);
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setLoadingOneClient(false);
+    }
+  };
+
+  const installOneClientPack = async (version: ModrinthVersion) => {
+    setInstallingOneClient(version.id);
+    setError(null);
+    setNotice("");
+    try {
+      const installed = await invoke<InstalledInstance>("install_modrinth_modpack", {
+        projectId: ONECLIENT_PROJECT_ID,
+        versionId: version.id
+      });
+      setNotice(`OneClient ${version.version_number} installed as ${installed.id}. Its isolated profile is available in Versions and Home.`);
+      await refreshInstances();
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setInstallingOneClient("");
+    }
+  };
+
   if (!isDesktop) {
     return (
       <EmptyPage
@@ -1840,6 +1888,47 @@ function ModrinthModpacksPage({ isDesktop, onNavigate }: {
         <a href="https://modrinth.com/modpacks" target="_blank" rel="noreferrer" className="modrinth-provider-link">
           Browse Modrinth <ExternalLink size={13} />
         </a>
+      </section>
+
+      <section className="modrinth-oneclient-feature">
+        <div className="modrinth-oneclient-copy">
+          <span className="section-eyebrow">FEATURED CLIENT · POLYFROST</span>
+          <h2>OneClient in-game experience</h2>
+          <p>Install the official OneClient modpack in its own isolated profile. It brings the OneConfig-powered in-game settings, themes, HUD modules, performance stack and the world-hosting features advertised by Polyfrost.</p>
+          <div className="modrinth-oneclient-pills">
+            <span><CheckCircle2 size={12} /> Customizable HUD</span>
+            <span><CheckCircle2 size={12} /> Themes & mod settings</span>
+            <span><CheckCircle2 size={12} /> Performance modules</span>
+            <span><CheckCircle2 size={12} /> Multiplayer features</span>
+          </div>
+          <small>Official source: Fabric only, modern Minecraft releases. It creates a separate profile and does not modify your existing worlds or mods. Not a 1.8.9 PvP pack.</small>
+        </div>
+        <div className="modrinth-oneclient-actions">
+          <a href="https://modrinth.com/modpack/oneclient-modpack" target="_blank" rel="noreferrer" className="modrinth-provider-link">
+            Official Modrinth page <ExternalLink size={13} />
+          </a>
+          <button type="button" className="modrinth-oneclient-button" onClick={() => void loadOneClientVersions()} disabled={loadingOneClient || Boolean(installingOneClient)}>
+            {loadingOneClient ? <RefreshCw size={14} className="spin" /> : <Layers3 size={14} />}
+            {loadingOneClient ? "Loading releases…" : oneClientExpanded ? "Hide releases" : "Choose OneClient version"}
+          </button>
+        </div>
+        {oneClientExpanded && (
+          <div className="modrinth-oneclient-releases">
+            {oneClientVersions.length > 0 ? oneClientVersions.slice(0, 8).map((version) => (
+              <div className="modrinth-version-row" key={version.id}>
+                <div>
+                  <strong>{version.version_number}</strong>
+                  <small>{version.game_versions.slice(0, 4).join(", ")} · Fabric</small>
+                </div>
+                <button type="button" onClick={() => void installOneClientPack(version)} disabled={Boolean(installingOneClient) || Boolean(installingVersion)}>
+                  {installingOneClient === version.id ? <RefreshCw size={13} className="spin" /> : <Download size={13} />}
+                  {installingOneClient === version.id ? "Installing…" : "Install profile"}
+                </button>
+              </div>
+            )) : <span className="modrinth-version-loading">No installable official .mrpack release was returned.</span>}
+          </div>
+        )}
+        <span className="modrinth-oneclient-license">Installs directly from Modrinth · Upstream project license: GPL-3.0-only · NOVA does not bundle OneClient code.</span>
       </section>
 
       <section className="modrinth-section">
