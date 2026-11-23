@@ -109,6 +109,17 @@ pub(crate) struct DiagnosticLog {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct NetworkEndpoint {
+    pub name: String,
+    pub host: String,
+    pub status_code: Option<u16>,
+    pub latency_ms: Option<u128>,
+    pub reachable: bool,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct DiagnosticReport {
     pub schema_version: u32,
     pub report_id: String,
@@ -118,6 +129,7 @@ pub(crate) struct DiagnosticReport {
     pub summary: DiagnosticSummary,
     pub system: SystemInformation,
     pub instances: Vec<InstanceInformation>,
+    pub network: Vec<NetworkEndpoint>,
     pub checks: Vec<DiagnosticCheck>,
     pub recent_process_logs: Vec<DiagnosticLog>,
     pub report_path: String,
@@ -556,6 +568,91 @@ fn read_powershell_system(output: &str) -> Option<SystemInformation> {
         gpus,
         hardware_query_status: "complete".to_owned(),
     })
+}
+
+async fn collect_network_information() -> Vec<NetworkEndpoint> {
+    let client = match reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(8))
+        .user_agent(concat!("NOVA-Launcher/", env!("CARGO_PKG_VERSION")))
+        .build()
+    {
+        Ok(client) => client,
+        Err(error) => {
+            return vec![NetworkEndpoint {
+                name: "HTTP client".to_owned(),
+                host: "local runtime".to_owned(),
+                status_code: None,
+                latency_ms: None,
+                reachable: false,
+                detail: redact_text(&error.to_string()),
+            }];
+        }
+    };
+
+    let endpoints = [
+        (
+            "Mojang version manifest",
+            "piston-meta.mojang.com",
+            "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json",
+            true,
+        ),
+        (
+            "Minecraft libraries CDN",
+            "libraries.minecraft.net",
+            "https://libraries.minecraft.net/",
+            false,
+        ),
+        (
+            "Minecraft assets CDN",
+            "resources.download.minecraft.net",
+            "https://resources.download.minecraft.net/",
+            false,
+        ),
+    ];
+    let mut results = Vec::with_capacity(endpoints.len());
+    for (name, host, url, get) in endpoints {
+        let started = std::time::Instant::now();
+        let request = if get {
+            client.get(url)
+        } else {
+            client.head(url)
+        };
+        let result = tokio::time::timeout(Duration::from_secs(9), request.send()).await;
+        match result {
+            Ok(Ok(response)) => {
+                let status = response.status();
+                results.push(NetworkEndpoint {
+                    name: name.to_owned(),
+                    host: host.to_owned(),
+                    status_code: Some(status.as_u16()),
+                    latency_ms: Some(started.elapsed().as_millis()),
+                    reachable: true,
+                    detail: format!(
+                        "Host responded with HTTP {}. A response confirms DNS, TCP and TLS connectivity.",
+                        status.as_u16()
+                    ),
+                });
+            }
+            Ok(Err(error)) => results.push(NetworkEndpoint {
+                name: name.to_owned(),
+                host: host.to_owned(),
+                status_code: None,
+                latency_ms: Some(started.elapsed().as_millis()),
+                reachable: false,
+                detail: redact_text(&error.to_string()),
+            }),
+            Err(_) => results.push(NetworkEndpoint {
+                name: name.to_owned(),
+                host: host.to_owned(),
+                status_code: None,
+                latency_ms: Some(started.elapsed().as_millis()),
+                reachable: false,
+                detail: "Connection timed out after the configured diagnostic timeout.".to_owned(),
+            }),
+        }
+    }
+    results
 }
 
 async fn collect_system_information() -> SystemInformation {
@@ -1228,7 +1325,10 @@ pub(crate) async fn run_report(
 ) -> Result<DiagnosticReport, String> {
     let generated_at = unix_now();
     let id = report_id();
-    let system = collect_system_information().await;
+    let (system, network) = tokio::join!(
+        collect_system_information(),
+        collect_network_information()
+    );
     let logs = process_log_snapshot(target_instance.as_deref());
     let data_for_worker = data_root.clone();
     let cache_for_worker = cache_root.clone();
@@ -1255,6 +1355,24 @@ pub(crate) async fn run_report(
         ],
         None,
     );
+    for endpoint in &network {
+        add_check(
+            &mut checks,
+            &format!("network.{}", endpoint.host),
+            "network",
+            if endpoint.reachable { "info" } else { "warning" },
+            if endpoint.reachable { "passed" } else { "warning" },
+            &endpoint.name,
+            &endpoint.detail,
+            vec![
+                format!("host: {}", endpoint.host),
+                format!("HTTP status: {}", endpoint.status_code.map(|status| status.to_string()).unwrap_or_else(|| "no response".to_owned())),
+                format!("latency: {}", endpoint.latency_ms.map(|value| format!("{value} ms")).unwrap_or_else(|| "unavailable".to_owned())),
+            ],
+            if endpoint.reachable { None } else { Some("Check DNS, firewall, proxy, VPN and TLS inspection settings, then retry the diagnostic.".to_owned()) },
+        );
+    }
+
     add_check(
         &mut checks,
         "system.hardware",
@@ -1358,6 +1476,7 @@ pub(crate) async fn run_report(
         summary,
         system,
         instances,
+        network,
         checks,
         recent_process_logs: logs,
         report_path: format!("%NOVA_DATA%/diagnostics/reports/{id}.json"),
