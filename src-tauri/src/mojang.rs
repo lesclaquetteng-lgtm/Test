@@ -777,12 +777,10 @@ async fn install_vanilla_inner(
             })
             .await;
     }
-    let native_bytes = crate::natives::extract_archives(
-        native_archives,
-        instance_root.join("natives"),
-    )
-    .await
-    .map_err(MojangError::Download)?;
+    let native_bytes =
+        crate::natives::extract_archives(native_archives, instance_root.join("natives"))
+            .await
+            .map_err(MojangError::Download)?;
     total_bytes = total_bytes.saturating_add(native_bytes);
 
     let mut unique_assets = HashMap::<String, u64>::new();
