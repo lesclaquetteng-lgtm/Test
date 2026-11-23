@@ -1718,7 +1718,9 @@ pub(crate) fn open_report_folder(data_root: &Path) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{classify_crash_signatures, parse_java_major, redact_text, safe_id, safe_relative_path};
+    use super::{
+        classify_crash_signatures, parse_java_major, redact_text, safe_id, safe_relative_path,
+    };
 
     #[test]
     fn redacts_sensitive_fields_and_bearer_tokens() {
@@ -1750,8 +1752,12 @@ mod tests {
         ];
         let diagnoses = classify_crash_signatures(&logs, &[], &[]);
         assert_eq!(diagnoses.len(), 2);
-        assert!(diagnoses.iter().any(|item| item.code == "java.heap.exhausted"));
-        assert!(diagnoses.iter().any(|item| item.code == "graphics.opengl.failure"));
+        assert!(diagnoses
+            .iter()
+            .any(|item| item.code == "java.heap.exhausted"));
+        assert!(diagnoses
+            .iter()
+            .any(|item| item.code == "graphics.opengl.failure"));
         assert!(diagnoses.iter().all(|item| !item.evidence.is_empty()));
         assert!(diagnoses.iter().all(|item| item.confidence == "medium"));
     }
