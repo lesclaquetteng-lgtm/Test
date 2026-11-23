@@ -581,7 +581,7 @@ function HomePage({
   );
 }
 
-function InstancesPage(function InstancesPage({ isDesktop, playerName, setPlayerName }: {
+function InstancesPage({ isDesktop, playerName, setPlayerName }: {
   isDesktop: boolean;
   playerName: string;
   setPlayerName: (value: string) => void;
