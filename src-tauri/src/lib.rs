@@ -2,8 +2,8 @@ use serde::Serialize;
 use std::{env, path::PathBuf, process::Command};
 use tauri::{Emitter, Manager};
 
-pub(crate) mod downloader;
 pub(crate) mod diagnostics;
+pub(crate) mod downloader;
 pub(crate) mod launch;
 pub(crate) mod mojang;
 pub(crate) mod natives;
