@@ -231,10 +231,8 @@ async fn extract_archives_inner(
     let stage = parent.join(format!(".natives-stage-{nonce}-{sequence}"));
     let stage_for_worker = stage.clone();
 
-    let extracted = tokio::task::spawn_blocking(move || {
-        extract_sync(&archives, &stage_for_worker)
-    })
-    .await
+    let extracted = tokio::task::spawn_blocking(move || extract_sync(&archives, &stage_for_worker))
+        .await
     .map_err(|error| NativeError::Worker(error.to_string()))?;
 
     let extracted = match extracted {
