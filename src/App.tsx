@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import "./instances.css";
 import {
   Activity,
+  AlertCircle,
   ArrowRight,
   ArrowUpRight,
   Blocks,
@@ -1175,7 +1176,67 @@ function App() {
   const [page, setPage] = useState<Page>("overview");
   const { runtime, checking, isDesktop, refresh } = useDesktopRuntime();
   const performance = usePerformanceMetrics(isDesktop);
+  const [diagnosticReport, setDiagnosticReport] = useState<DiagnosticReport | null>(null);
+  const [diagnosticLoading, setDiagnosticLoading] = useState(false);
+  const [diagnosticError, setDiagnosticError] = useState<string | null>(null);
   const pageInfo = PAGE_INFO[page];
+
+  const runDiagnostics = useCallback(async (deep: boolean) => {
+    if (!isDesktop || diagnosticLoading) return;
+    setDiagnosticLoading(true);
+    setDiagnosticError(null);
+    try {
+      const report = await invoke<DiagnosticReport>("run_diagnostics", {
+        instanceId: null,
+        deep
+      });
+      setDiagnosticReport(report);
+    } catch (cause) {
+      setDiagnosticError(String(cause));
+    } finally {
+      setDiagnosticLoading(false);
+    }
+  }, [diagnosticLoading, isDesktop]);
+
+  const openDiagnosticFolder = useCallback(async () => {
+    try {
+      await invoke("open_diagnostics_folder");
+    } catch (cause) {
+      setDiagnosticError(String(cause));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isDesktop) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void listen<DiagnosticReport>("nova-diagnostic-report-ready", (event) => {
+      setDiagnosticReport(event.payload);
+      setDiagnosticError(null);
+    }).then((stop) => {
+      if (disposed) stop();
+      else unlisten = stop;
+    }).catch((cause: unknown) => {
+      console.error("Unable to subscribe to diagnostic reports:", cause);
+    });
+
+    setDiagnosticLoading(true);
+    void invoke<DiagnosticReport>("run_diagnostics", {
+      instanceId: null,
+      deep: false
+    }).then((report) => {
+      if (!disposed) setDiagnosticReport(report);
+    }).catch((cause: unknown) => {
+      if (!disposed) setDiagnosticError(String(cause));
+    }).finally(() => {
+      if (!disposed) setDiagnosticLoading(false);
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [isDesktop]);
 
   return (
     <div className="app-shell">
@@ -1227,6 +1288,16 @@ function App() {
             )}
             {page === "performance" && (
               <PerformancePage snapshot={performance.snapshot} checking={performance.checking} isDesktop={isDesktop} onRefresh={() => void performance.refresh()} />
+            )}
+            {page === "diagnostics" && (
+              <DiagnosticsPage
+                report={diagnosticReport}
+                loading={diagnosticLoading}
+                error={diagnosticError}
+                isDesktop={isDesktop}
+                onRun={(deep) => void runDiagnostics(deep)}
+                onOpenFolder={() => void openDiagnosticFolder()}
+              />
             )}
             {page === "settings" && (
               <SettingsPage runtime={runtime} checking={checking} isDesktop={isDesktop} onRefresh={() => void refresh()} />
