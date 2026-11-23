@@ -327,7 +327,6 @@ async fn list_neoforge(game_version: &str) -> Result<Vec<LoaderRelease>, String>
         }
     }
     sort_releases(&mut releases);
-    releases.truncate(40);
     Ok(releases)
 }
 
