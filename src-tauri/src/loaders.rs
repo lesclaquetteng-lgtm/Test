@@ -870,7 +870,7 @@ pub(crate) async fn repair_loader(
     instance_id: &str,
     marker: InstalledInstance,
 ) -> Result<InstalledInstance, String> {
-    let loader
+    let loader = marker
         .loader
         .clone()
         .ok_or_else(|| "This instance has no mod loader to repair".to_owned())?;
