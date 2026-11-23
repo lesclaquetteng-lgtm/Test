@@ -437,7 +437,7 @@ function HomePage({
       const nextSession = await invoke<LaunchSession>("launch_minecraft", {
         instanceId: selected.id,
         playerName,
-        memoryMb: 4096
+        memoryMb
       });
       setSession(nextSession);
       setStatus(`Minecraft is running · PID ${nextSession.pid}`);
