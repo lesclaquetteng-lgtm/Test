@@ -119,11 +119,21 @@ struct VersionDetails {
     #[serde(default)]
     main_class: Option<String>,
     #[serde(default)]
-    downloads: HashMap<String, Artifact>,
+    downloads: HashMap<String, VersionDownload>,
     #[serde(default)]
     asset_index: Option<AssetIndexDownload>,
     #[serde(default)]
     libraries: Vec<Library>,
+}
+
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VersionDownload {
+    sha1: String,
+    url: String,
+    #[serde(default)]
+    size: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -908,6 +918,51 @@ mod tests {
         assert!(!library_allowed(&allowed));
         let no_rules: Vec<LibraryRule> = Vec::new();
         assert!(library_allowed(&no_rules));
+    }
+
+    #[test]
+    fn parses_real_version_download_and_library_artifact_shapes() {
+        let raw = r#"{
+          "id":"1.21.1",
+          "mainClass":"net.minecraft.client.main.Main",
+          "downloads":{
+            "client":{
+              "sha1":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "size":100,
+              "url":"https://launcher.mojang.com/v1/objects/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/client.jar"
+            }
+          },
+          "assetIndex":{
+            "id":"17",
+            "sha1":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "size":20,
+            "totalSize":100,
+            "url":"https://piston-meta.mojang.com/v1/packages/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/17.json"
+          },
+          "libraries":[{
+            "name":"org.example:sample:1.0",
+            "downloads":{"artifact":{
+              "path":"org/example/sample/1.0/sample-1.0.jar",
+              "sha1":"cccccccccccccccccccccccccccccccccccccccc",
+              "size":30,
+              "url":"https://libraries.minecraft.net/org/example/sample/1.0/sample-1.0.jar"
+            }}
+          }]
+        }"#;
+        let details: super::VersionDetails =
+            serde_json::from_str(raw).expect("valid official version metadata");
+        assert_eq!(details.downloads["client"].size, Some(100));
+        assert_eq!(
+            details.libraries[0]
+                .downloads
+                .as_ref()
+                .unwrap()
+                .artifact
+                .as_ref()
+                .unwrap()
+                .path,
+            "org/example/sample/1.0/sample-1.0.jar"
+        );
     }
 
     #[test]
