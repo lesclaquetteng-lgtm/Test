@@ -105,6 +105,13 @@ type ModrinthVersion = {
 };
 type FabricLoaderVersion = { version: string; stable: boolean };
 type InstalledModFile = { fileName: string; size: number };
+type LoaderRelease = {
+  loader: "forge" | "neoforge";
+  gameVersion: string;
+  version: string;
+  displayVersion: string;
+  stable: boolean;
+};
 type InstallProgress = {
   phase: string;
   completedFiles: number;
@@ -1047,7 +1054,7 @@ function InstanceManagementCard({
   onStop: () => void;
   onRefresh: () => Promise<void>;
 }) {
-  type Action = "rename" | "duplicate" | "settings" | "delete" | null;
+  type Action = "rename" | "duplicate" | "settings" | "delete" | "loader" | null;
   const [action, setAction] = useState<Action>(null);
   const [displayName, setDisplayName] = useState(instance.displayName || instance.id);
   const [memoryMb, setMemoryMb] = useState(String(instance.memoryMb ?? 0));
@@ -1055,12 +1062,41 @@ function InstanceManagementCard({
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [loaderKind, setLoaderKind] = useState<"forge" | "neoforge">("forge");
+  const [loaderVersions, setLoaderVersions] = useState<LoaderRelease[]>([]);
+  const [selectedLoaderVersion, setSelectedLoaderVersion] = useState("");
+  const [loadingLoaderVersions, setLoadingLoaderVersions] = useState(false);
 
   useEffect(() => {
     setDisplayName(instance.displayName || instance.id);
     setMemoryMb(String(instance.memoryMb ?? 0));
     setJvmArguments((instance.jvmArguments ?? []).join("\n"));
   }, [instance.displayName, instance.memoryMb, instance.jvmArguments, instance.id]);
+
+  useEffect(() => {
+    if (action !== "loader") return;
+    let cancelled = false;
+    setLoadingLoaderVersions(true);
+    setLoaderVersions([]);
+    setSelectedLoaderVersion("");
+    setError("");
+    void invoke<LoaderRelease[]>("list_loader_versions_command", {
+      gameVersion: instance.gameVersion || instance.id,
+      loader: loaderKind
+    }).then((versions) => {
+      if (cancelled) return;
+      setLoaderVersions(versions);
+      setSelectedLoaderVersion(versions[0]?.version ?? "");
+      if (versions.length === 0) {
+        setError("No supported " + loaderKind + " builds were found for this Minecraft version.");
+      }
+    }).catch((cause: unknown) => {
+      if (!cancelled) setError(String(cause));
+    }).finally(() => {
+      if (!cancelled) setLoadingLoaderVersions(false);
+    });
+    return () => { cancelled = true; };
+  }, [action, loaderKind, instance.gameVersion, instance.id]);
 
   const perform = async (name: string, task: () => Promise<unknown>) => {
     setBusy(name);
@@ -1108,6 +1144,17 @@ function InstanceManagementCard({
   const repair = () => perform("Repair", () =>
     invoke("repair_instance", { instanceId: instance.id })
   );
+
+  const installLoader = () => {
+    if (!selectedLoaderVersion) return;
+    return perform("Install " + loaderKind, () =>
+      invoke("install_loader", {
+        instanceId: instance.id,
+        loader: loaderKind,
+        version: selectedLoaderVersion
+      })
+    );
+  };
 
   const remove = () => perform("Delete", () =>
     invoke("delete_instance", { instanceId: instance.id })
@@ -1164,6 +1211,11 @@ function InstanceManagementCard({
         <button className="instance-card-icon-action" type="button" onClick={() => void openFolder()} disabled={busy !== ""} title="Open instance folder" aria-label="Open instance folder">
           <FolderOpen size={14} />
         </button>
+        {!instance.loader && (
+          <button className="instance-card-icon-action" type="button" onClick={() => selectAction("loader")} disabled={busy !== ""} title="Install Forge or NeoForge" aria-label="Install Forge or NeoForge">
+            <Layers3 size={14} />
+          </button>
+        )}
         <button className="instance-card-icon-action" type="button" onClick={() => selectAction("settings")} disabled={busy !== ""} title="Instance settings" aria-label="Instance settings">
           <Settings2 size={14} />
         </button>
@@ -1231,6 +1283,35 @@ function InstanceManagementCard({
                 <button type="button" className="danger" onClick={() => void remove()} disabled={busy !== ""}><Trash2 size={13} /> Delete permanently</button>
                 <button type="button" className="subtle" onClick={() => setAction(null)}>Keep instance</button>
               </div>
+            </>
+          )}
+          {action === "loader" && (
+            <>
+              <div className="instance-manage-heading"><strong>Install a mod loader</strong><button type="button" onClick={() => setAction(null)} aria-label="Close"><X size={14} /></button></div>
+              <p>Official client installer · isolated to this instance · Minecraft {instance.gameVersion || instance.id}</p>
+              <label><span>Loader</span>
+                <select value={loaderKind} onChange={(event) => setLoaderKind(event.target.value as "forge" | "neoforge")}>
+                  <option value="forge">Minecraft Forge</option>
+                  <option value="neoforge">NeoForge</option>
+                </select>
+              </label>
+              <label><span>Available builds</span>
+                <select value={selectedLoaderVersion} onChange={(event) => setSelectedLoaderVersion(event.target.value)} disabled={loadingLoaderVersions || loaderVersions.length === 0}>
+                  {loaderVersions.map((release) => (
+                    <option value={release.version} key={release.version}>
+                      {release.displayVersion + (release.stable ? " · Stable" : " · Preview")}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {loadingLoaderVersions && <p><RefreshCw size={12} className="spin" /> Loading official builds…</p>}
+              <div className="instance-manage-actions">
+                <button type="button" onClick={() => void installLoader()} disabled={busy !== "" || loadingLoaderVersions || !selectedLoaderVersion}>
+                  <Download size={13} /> Install {loaderKind === "forge" ? "Forge" : "NeoForge"}
+                </button>
+                <button type="button" className="subtle" onClick={() => setAction(null)}>Cancel</button>
+              </div>
+              <p>The client installer runs in headless mode. NOVA validates the generated launch profile before enabling it.</p>
             </>
           )}
           {error && <div className="instance-error" role="alert">{error}</div>}
