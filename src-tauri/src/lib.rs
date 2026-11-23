@@ -1,7 +1,9 @@
 use serde::Serialize;
+use tauri::{Emitter, Manager};
 use std::{env, path::PathBuf, process::Command};
 
 pub(crate) mod downloader;
+pub(crate) mod mojang;
 pub(crate) mod performance;
 
 #[derive(Debug, Serialize)]
@@ -75,12 +77,70 @@ fn get_performance_snapshot() -> performance::PerformanceSnapshot {
     performance::global().snapshot()
 }
 
+#[tauri::command]
+async fn get_minecraft_versions(app: tauri::AppHandle) -> Result<mojang::VersionManifest, String> {
+    let cache_root = app
+        .path()
+        .app_cache_dir()
+        .map_err(|error| format!("Unable to resolve NOVA cache directory: {error}"))?;
+    mojang::fetch_manifest(&cache_root).await
+}
+
+#[tauri::command]
+async fn list_installed_instances(
+    app: tauri::AppHandle,
+) -> Result<Vec<mojang::InstalledInstance>, String> {
+    let data_root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Unable to resolve NOVA data directory: {error}"))?;
+    mojang::list_installed_instances(&data_root).await
+}
+
+#[tauri::command]
+async fn install_vanilla_version(
+    app: tauri::AppHandle,
+    version_id: String,
+) -> Result<mojang::InstalledInstance, String> {
+    let data_root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Unable to resolve NOVA data directory: {error}"))?;
+    let cache_root = app
+        .path()
+        .app_cache_dir()
+        .map_err(|error| format!("Unable to resolve NOVA cache directory: {error}"))?;
+
+    let (progress_sender, mut progress_receiver) =
+        tokio::sync::mpsc::channel::<mojang::InstallProgress>(128);
+    let progress_app = app.clone();
+    let progress_task = tauri::async_runtime::spawn(async move {
+        while let Some(progress) = progress_receiver.recv().await {
+            let _ = progress_app.emit("nova-install-progress", progress);
+        }
+    });
+
+    let result = mojang::install_vanilla(
+        &data_root,
+        &cache_root,
+        &version_id,
+        Some(progress_sender.clone()),
+    )
+    .await;
+    drop(progress_sender);
+    let _ = progress_task.await;
+    result
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             get_runtime_status,
-            get_performance_snapshot
+            get_performance_snapshot,
+            get_minecraft_versions,
+            list_installed_instances,
+            install_vanilla_version
         ])
         .run(tauri::generate_context!())
         .expect("error while running NOVA Launcher");
