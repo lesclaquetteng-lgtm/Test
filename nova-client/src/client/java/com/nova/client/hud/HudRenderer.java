@@ -1,0 +1,112 @@
+package com.nova.client.hud;
+
+import com.nova.client.config.ClientConfig;
+import com.nova.client.config.ClientConfig.NovaConfig;
+import com.nova.client.telemetry.ClientTelemetry;
+import com.nova.client.telemetry.ClientTelemetry.Snapshot;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.DrawContext;
+
+public final class HudRenderer {
+    private static final int PANEL = 0xD9101724;
+    private static final int PANEL_EDGE = 0xFF2C3A50;
+    private static final int PRIMARY = 0xFFF0F4FA;
+    private static final int SECONDARY = 0xFF95A5BA;
+
+    private HudRenderer() { }
+
+    public static void render(DrawContext context) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        NovaConfig config = ClientConfig.CONFIG;
+        if (client.currentScreen != null || client.player == null || client.world == null || !config.showHud) return;
+        renderPreview(context, client, config, ClientTelemetry.snapshot());
+    }
+
+    public static void renderPreview(DrawContext context, MinecraftClient client, NovaConfig config, Snapshot snapshot) {
+        if (config.showStats) renderStats(context, client, config, snapshot, config.statsX, config.statsY);
+        if (config.showKeystrokes) renderKeystrokes(context, client, config, config.keysX, config.keysY);
+    }
+
+    public static int statsHeight(NovaConfig config) {
+        int rows = 0;
+        if (config.showFps) rows++;
+        if (config.showPing) rows++;
+        if (config.showCps) rows++;
+        if (config.showCoordinates) rows++;
+        if (config.showMemory) rows++;
+        return 27 + Math.max(rows, 1) * 12 + 8;
+    }
+
+    public static int statsWidth() { return 168; }
+    public static int keysWidth() { return 104; }
+    public static int keysHeight() { return 82; }
+
+    private static void renderStats(DrawContext context, MinecraftClient client, NovaConfig config,
+                                    Snapshot snapshot, int x, int y) {
+        int height = statsHeight(config);
+        int accent = ClientConfig.accentColor();
+        context.fill(x, y, x + statsWidth(), y + height, PANEL);
+        context.fill(x, y, x + statsWidth(), y + 1, PANEL_EDGE);
+        context.fill(x, y, x + 2, y + height, accent);
+        context.fill(x + statsWidth() - 1, y, x + statsWidth(), y + height, 0x442C3A50);
+        context.drawTextWithShadow(client.textRenderer, "NOVA", x + 10, y + 7, accent);
+        context.drawTextWithShadow(client.textRenderer, "CLIENT TELEMETRY", x + 49, y + 8, SECONDARY);
+        int rowY = y + 25;
+        if (config.showFps) {
+            String fps = snapshot.fps() > 0 ? snapshot.fps() + " FPS" : "-- FPS";
+            if (config.lowOverheadMode && snapshot.frameTimeMs() > 0.0f) {
+                fps += " / " + String.format(java.util.Locale.ROOT, "%.1f ms", snapshot.frameTimeMs());
+            }
+            drawRow(context, client, x + 10, rowY, "FRAME", fps);
+            rowY += 12;
+        }
+        if (config.showPing) {
+            drawRow(context, client, x + 10, rowY, "PING", snapshot.ping() >= 0 ? snapshot.ping() + " ms" : "--");
+            rowY += 12;
+        }
+        if (config.showCps) {
+            drawRow(context, client, x + 10, rowY, "L-CPS", Integer.toString(snapshot.leftCps()));
+            rowY += 12;
+        }
+        if (config.showCoordinates) {
+            drawRow(context, client, x + 10, rowY, "XYZ", snapshot.x() + "  " + snapshot.y() + "  " + snapshot.z());
+            rowY += 12;
+        }
+        if (config.showMemory) {
+            String memory = snapshot.maxMemoryMb() > 0
+                    ? snapshot.usedMemoryMb() + " / " + snapshot.maxMemoryMb() + " MB" : "--";
+            drawRow(context, client, x + 10, rowY, "RAM", memory);
+        }
+    }
+
+    private static void drawRow(DrawContext context, MinecraftClient client, int x, int y, String label, String value) {
+        context.drawTextWithShadow(client.textRenderer, label, x, y, SECONDARY);
+        context.drawTextWithShadow(client.textRenderer, value, x + 53, y, PRIMARY);
+    }
+
+    private static void renderKeystrokes(DrawContext context, MinecraftClient client, NovaConfig config, int x, int y) {
+        int accent = ClientConfig.accentColor();
+        context.fill(x, y, x + keysWidth(), y + keysHeight(), PANEL);
+        context.fill(x, y, x + keysWidth(), y + 1, PANEL_EDGE);
+        context.fill(x, y, x + 2, y + keysHeight(), accent);
+        int key = 22;
+        int gap = 4;
+        int start = x + 15;
+        renderKey(context, client, start + key + gap, y + 7, key, key, "W", client.options.forwardKey.isPressed(), accent);
+        renderKey(context, client, start, y + 7 + key + gap, key, key, "A", client.options.leftKey.isPressed(), accent);
+        renderKey(context, client, start + key + gap, y + 7 + key + gap, key, key, "S", client.options.backKey.isPressed(), accent);
+        renderKey(context, client, start + (key + gap) * 2, y + 7 + key + gap, key, key, "D", client.options.rightKey.isPressed(), accent);
+        int spaceY = y + 7 + (key + gap) * 2 + 2;
+        context.fill(start, spaceY, start + 78, spaceY + 8, client.options.jumpKey.isPressed() ? accent : 0xFF263449);
+        context.drawTextWithShadow(client.textRenderer, "SPACE", start + 30, spaceY,
+                client.options.jumpKey.isPressed() ? 0xFF0E1824 : PRIMARY);
+    }
+
+    private static void renderKey(DrawContext context, MinecraftClient client, int x, int y,
+                                  int width, int height, String label, boolean pressed, int accent) {
+        context.fill(x, y, x + width, y + height, pressed ? accent : 0xFF263449);
+        int textWidth = client.textRenderer.getWidth(label);
+        context.drawTextWithShadow(client.textRenderer, label, x + (width - textWidth) / 2, y + 7,
+                pressed ? 0xFF0E1824 : PRIMARY);
+    }
+}
