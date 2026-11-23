@@ -1377,7 +1377,7 @@ fn extract_mrpack_overrides(
     let mut copied_files = 0_usize;
     let mut copied_bytes = 0_u64;
     for (_, index) in selected_entries {
-        let mut entry = archive.by_index(index).map_err(|error| error.to_string())?;
+        let entry = archive.by_index(index).map_err(|error| error.to_string())?;
         let archive_name = entry
             .name()
             .map_err(|error| error.to_string())?
