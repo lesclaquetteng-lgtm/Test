@@ -247,6 +247,7 @@ pub fn run() {
             modrinth::install_modrinth_modpack,
             modrinth::list_instance_mods,
             modrinth::remove_instance_mod,
+            modrinth::set_instance_mod_enabled,
             instance_manager::rename_instance,
             instance_manager::duplicate_instance,
             instance_manager::delete_instance,
