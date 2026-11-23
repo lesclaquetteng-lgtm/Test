@@ -680,12 +680,7 @@ async fn collect_system_information() -> SystemInformation {
     if cfg!(windows) {
         let script = r#"$os=Get-CimInstance Win32_OperatingSystem; $cpu=Get-CimInstance Win32_Processor | Select-Object -First 1; $cs=Get-CimInstance Win32_ComputerSystem; $gpus=@(Get-CimInstance Win32_VideoController | ForEach-Object { [pscustomobject]@{ name=$_.Name; driverVersion=$_.DriverVersion; adapterMemoryBytes=[uint64]$_.AdapterRAM } }); [pscustomobject]@{ osCaption=$os.Caption; osVersion=$os.Version; osBuild=[string]$os.BuildNumber; cpuName=$cpu.Name; logicalProcessors=$cpu.NumberOfLogicalProcessors; memoryTotalBytes=[uint64]$cs.TotalPhysicalMemory; gpus=$gpus } | ConvertTo-Json -Compress -Depth 4"#;
         let command = AsyncCommand::new("powershell.exe")
-            .args([
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                script,
-            ])
+            .args(["-NoProfile", "-NonInteractive", "-Command", script])
             .kill_on_drop(true)
             .output();
         if let Ok(Ok(output)) = tokio::time::timeout(Duration::from_secs(8), command).await {
@@ -1051,10 +1046,7 @@ fn inspect_instance(
     let asset_index: Option<AssetIndex> = fs::read(&asset_index_path)
         .ok()
         .and_then(|bytes| serde_json::from_slice(&bytes).ok());
-    let assets_objects_root = data_root
-        .join("shared")
-        .join("assets")
-        .join("objects");
+    let assets_objects_root = data_root.join("shared").join("assets").join("objects");
     let canonical_assets_root = fs::canonicalize(&assets_objects_root).ok();
     let mut asset_count = 0usize;
     let mut missing_assets = 0usize;
@@ -1346,10 +1338,8 @@ pub(crate) async fn run_report(
 ) -> Result<DiagnosticReport, String> {
     let generated_at = unix_now();
     let id = report_id();
-    let (system, network) = tokio::join!(
-        collect_system_information(),
-        collect_network_information()
-    );
+    let (system, network) =
+        tokio::join!(collect_system_information(), collect_network_information());
     let logs = process_log_snapshot(target_instance.as_deref());
     let data_for_worker = data_root.clone();
     let cache_for_worker = cache_root.clone();
@@ -1381,16 +1371,40 @@ pub(crate) async fn run_report(
             &mut checks,
             &format!("network.{}", endpoint.host),
             "network",
-            if endpoint.reachable { "info" } else { "warning" },
-            if endpoint.reachable { "passed" } else { "warning" },
+            if endpoint.reachable {
+                "info"
+            } else {
+                "warning"
+            },
+            if endpoint.reachable {
+                "passed"
+            } else {
+                "warning"
+            },
             &endpoint.name,
             &endpoint.detail,
             vec![
                 format!("host: {}", endpoint.host),
-                format!("HTTP status: {}", endpoint.status_code.map(|status| status.to_string()).unwrap_or_else(|| "no response".to_owned())),
-                format!("latency: {}", endpoint.latency_ms.map(|value| format!("{value} ms")).unwrap_or_else(|| "unavailable".to_owned())),
+                format!(
+                    "HTTP status: {}",
+                    endpoint
+                        .status_code
+                        .map(|status| status.to_string())
+                        .unwrap_or_else(|| "no response".to_owned())
+                ),
+                format!(
+                    "latency: {}",
+                    endpoint
+                        .latency_ms
+                        .map(|value| format!("{value} ms"))
+                        .unwrap_or_else(|| "unavailable".to_owned())
+                ),
             ],
-            if endpoint.reachable { None } else { Some("Check DNS, firewall, proxy, VPN and TLS inspection settings, then retry the diagnostic.".to_owned()) },
+            if endpoint.reachable {
+                None
+            } else {
+                Some("Check DNS, firewall, proxy, VPN and TLS inspection settings, then retry the diagnostic.".to_owned())
+            },
         );
     }
 
