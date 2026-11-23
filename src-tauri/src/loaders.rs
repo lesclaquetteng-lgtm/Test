@@ -7,7 +7,6 @@ use futures_util::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sha1::{Digest, Sha1};
 use std::{
     path::{Path, PathBuf},
     sync::OnceLock,
@@ -133,7 +132,12 @@ fn version_key(value: &str) -> Vec<(u8, String)> {
     for character in value.chars() {
         if !character.is_ascii_alphanumeric() {
             if !current.is_empty() {
-                parts.push((u8::from(numeric == Some(false)), current.to_ascii_lowercase()));
+                let token = if numeric == Some(true) {
+                current.parse::<u64>().unwrap_or(u64::MAX).to_string()
+            } else {
+                current.to_ascii_lowercase()
+            };
+            parts.push((u8::from(numeric == Some(false)), token));
                 current.clear();
             }
             numeric = None;
@@ -141,7 +145,12 @@ fn version_key(value: &str) -> Vec<(u8, String)> {
         }
         let is_numeric = character.is_ascii_digit();
         if numeric.is_some_and(|previous| previous != is_numeric) && !current.is_empty() {
-            parts.push((u8::from(numeric == Some(false)), current.to_ascii_lowercase()));
+            let token = if numeric == Some(true) {
+            current.parse::<u64>().unwrap_or(u64::MAX).to_string()
+        } else {
+            current.to_ascii_lowercase()
+        };
+        parts.push((u8::from(numeric == Some(false)), token));
             current.clear();
         }
         numeric = Some(is_numeric);
@@ -507,6 +516,79 @@ async fn write_json_atomic(path: &Path, value: &Value) -> Result<(), String> {
     Ok(())
 }
 
+async fn write_marker(root: &Path, marker: &InstalledInstance) -> Result<(), String> {
+    let bytes = serde_json::to_vec_pretty(marker).map_err(|error| error.to_string())?;
+    let destination = root.join(".nova-install.json");
+    let temporary = root.join(".nova-install.json.new");
+    let backup = root.join(".nova-install.json.backup");
+    fs::write(&temporary, bytes).await.map_err(|error| error.to_string())?;
+    if fs::try_exists(&backup).await.map_err(|error| error.to_string())? {
+        fs::remove_file(&backup).await.map_err(|error| error.to_string())?;
+    }
+    if fs::try_exists(&destination).await.map_err(|error| error.to_string())? {
+        fs::rename(&destination, &backup).await.map_err(|error| error.to_string())?;
+        if let Err(error) = fs::rename(&temporary, &destination).await {
+            let rollback = fs::rename(&backup, &destination).await;
+            let _ = fs::remove_file(&temporary).await;
+            if let Err(rollback_error) = rollback {
+                return Err(format!("Unable to publish loader marker ({error}); rollback failed ({rollback_error})"));
+            }
+            return Err(error.to_string());
+        }
+        let _ = fs::remove_file(backup).await;
+    } else {
+        fs::rename(&temporary, &destination).await.map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+fn copy_loader_libraries(source: &Path, destination: &Path) -> Result<usize, String> {
+    if !source.exists() {
+        return Ok(0);
+    }
+    let metadata = std::fs::symlink_metadata(source).map_err(|error| error.to_string())?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err("Loader library directory is not a regular directory".to_owned());
+    }
+    let canonical_root = std::fs::canonicalize(source).map_err(|error| error.to_string())?;
+    std::fs::create_dir_all(destination).map_err(|error| error.to_string())?;
+    fn visit(source: &Path, destination: &Path, canonical_root: &Path, files: &mut usize) -> Result<(), String> {
+        for entry in std::fs::read_dir(source).map_err(|error| error.to_string())? {
+            let entry = entry.map_err(|error| error.to_string())?;
+            let source_path = entry.path();
+            let destination_path = destination.join(entry.file_name());
+            let kind = entry.file_type().map_err(|error| error.to_string())?;
+            if kind.is_symlink() {
+                return Err(format!("Loader installer produced a symbolic link: {}", source_path.display()));
+            }
+            let canonical = std::fs::canonicalize(&source_path).map_err(|error| error.to_string())?;
+            if !canonical.starts_with(canonical_root) {
+                return Err("A loader library resolves outside its installer directory".to_owned());
+            }
+            if kind.is_dir() {
+                std::fs::create_dir_all(&destination_path).map_err(|error| error.to_string())?;
+                visit(&source_path, &destination_path, canonical_root, files)?;
+            } else if kind.is_file() {
+                let relative = source_path.strip_prefix(canonical_root).map_err(|error| error.to_string())?;
+                if relative.components().any(|part| !matches!(part, std::path::Component::Normal(_))) {
+                    return Err("Loader library contains an unsafe relative path".to_owned());
+                }
+                if let Some(parent) = destination_path.parent() {
+                    std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+                }
+                std::fs::copy(&source_path, &destination_path).map_err(|error| error.to_string())?;
+                *files = files.saturating_add(1);
+            } else {
+                return Err("Loader installer produced an unsupported file type".to_owned());
+            }
+        }
+        Ok(())
+    }
+    let mut files = 0;
+    visit(source, destination, &canonical_root, &mut files)?;
+    Ok(files)
+}
+
 async fn download_installer(
     cache_root: &Path,
     url: &str,
@@ -652,11 +734,38 @@ pub(crate) async fn install_loader_inner(
     let merged = merge_profile(&base_metadata, &raw_profile, &profile_id, &game_version)?;
     write_json_atomic(&profile_path, &merged).await?;
 
+    let local_libraries = instance_root.join("libraries");
+    let shared_libraries = data_root.join("shared").join("libraries");
+    let source = local_libraries.clone();
+    let destination = shared_libraries.clone();
+    tokio::task::spawn_blocking(move || copy_loader_libraries(&source, &destination))
+        .await
+        .map_err(|error| format!("Loader library sync worker failed: {error}"))??;
+
     marker.loader = Some(loader.to_owned());
     marker.loader_version = Some(selected_version.to_owned());
     marker.launch_version = Some(profile_id);
     write_marker(&instance_root, &marker).await?;
     Ok(marker)
+}
+
+pub(crate) async fn repair_loader(
+    data_root: &Path,
+    cache_root: &Path,
+    instance_id: &str,
+    mut marker: InstalledInstance,
+) -> Result<InstalledInstance, String> {
+    let loader = marker
+        .loader
+        .clone()
+        .ok_or_else(|| "This instance has no mod loader to repair".to_owned())?;
+    let version = marker
+        .loader_version
+        .clone()
+        .ok_or_else(|| "The instance is missing its loader version".to_owned())?;
+    marker.launch_version = None;
+    write_marker(&data_root.join("instances").join(instance_id), &marker).await?;
+    install_loader_inner(data_root, cache_root, instance_id, &loader, &version).await
 }
 
 #[tauri::command]
