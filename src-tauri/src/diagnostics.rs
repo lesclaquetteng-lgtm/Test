@@ -570,6 +570,53 @@ fn read_powershell_system(output: &str) -> Option<SystemInformation> {
     })
 }
 
+async fn probe_network_endpoint(
+    client: &reqwest::Client,
+    name: &'static str,
+    host: &'static str,
+    url: &'static str,
+    get: bool,
+) -> NetworkEndpoint {
+    let started = std::time::Instant::now();
+    let request = if get {
+        client.get(url)
+    } else {
+        client.head(url)
+    };
+    match tokio::time::timeout(Duration::from_secs(9), request.send()).await {
+        Ok(Ok(response)) => {
+            let status = response.status();
+            NetworkEndpoint {
+                name: name.to_owned(),
+                host: host.to_owned(),
+                status_code: Some(status.as_u16()),
+                latency_ms: Some(started.elapsed().as_millis()),
+                reachable: true,
+                detail: format!(
+                    "Host responded with HTTP {}. A response confirms DNS, TCP and TLS connectivity.",
+                    status.as_u16()
+                ),
+            }
+        }
+        Ok(Err(error)) => NetworkEndpoint {
+            name: name.to_owned(),
+            host: host.to_owned(),
+            status_code: None,
+            latency_ms: Some(started.elapsed().as_millis()),
+            reachable: false,
+            detail: redact_text(&error.to_string()),
+        },
+        Err(_) => NetworkEndpoint {
+            name: name.to_owned(),
+            host: host.to_owned(),
+            status_code: None,
+            latency_ms: Some(started.elapsed().as_millis()),
+            reachable: false,
+            detail: "Connection timed out after the configured diagnostic timeout.".to_owned(),
+        },
+    }
+}
+
 async fn collect_network_information() -> Vec<NetworkEndpoint> {
     let client = match reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(5))
@@ -590,71 +637,31 @@ async fn collect_network_information() -> Vec<NetworkEndpoint> {
         }
     };
 
-    let endpoints = [
-        (
+    futures_util::future::join_all([
+        probe_network_endpoint(
+            &client,
             "Mojang version manifest",
             "piston-meta.mojang.com",
             "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json",
             true,
         ),
-        (
+        probe_network_endpoint(
+            &client,
             "Minecraft libraries CDN",
             "libraries.minecraft.net",
             "https://libraries.minecraft.net/",
             false,
         ),
-        (
+        probe_network_endpoint(
+            &client,
             "Minecraft assets CDN",
             "resources.download.minecraft.net",
             "https://resources.download.minecraft.net/",
             false,
         ),
-    ];
-    let mut results = Vec::with_capacity(endpoints.len());
-    for (name, host, url, get) in endpoints {
-        let started = std::time::Instant::now();
-        let request = if get {
-            client.get(url)
-        } else {
-            client.head(url)
-        };
-        let result = tokio::time::timeout(Duration::from_secs(9), request.send()).await;
-        match result {
-            Ok(Ok(response)) => {
-                let status = response.status();
-                results.push(NetworkEndpoint {
-                    name: name.to_owned(),
-                    host: host.to_owned(),
-                    status_code: Some(status.as_u16()),
-                    latency_ms: Some(started.elapsed().as_millis()),
-                    reachable: true,
-                    detail: format!(
-                        "Host responded with HTTP {}. A response confirms DNS, TCP and TLS connectivity.",
-                        status.as_u16()
-                    ),
-                });
-            }
-            Ok(Err(error)) => results.push(NetworkEndpoint {
-                name: name.to_owned(),
-                host: host.to_owned(),
-                status_code: None,
-                latency_ms: Some(started.elapsed().as_millis()),
-                reachable: false,
-                detail: redact_text(&error.to_string()),
-            }),
-            Err(_) => results.push(NetworkEndpoint {
-                name: name.to_owned(),
-                host: host.to_owned(),
-                status_code: None,
-                latency_ms: Some(started.elapsed().as_millis()),
-                reachable: false,
-                detail: "Connection timed out after the configured diagnostic timeout.".to_owned(),
-            }),
-        }
-    }
-    results
+    ])
+    .await
 }
-
 async fn collect_system_information() -> SystemInformation {
     if cfg!(windows) {
         let script = r#"$os=Get-CimInstance Win32_OperatingSystem; $cpu=Get-CimInstance Win32_Processor | Select-Object -First 1; $cs=Get-CimInstance Win32_ComputerSystem; $gpus=@(Get-CimInstance Win32_VideoController | ForEach-Object { [pscustomobject]@{ name=$_.Name; driverVersion=$_.DriverVersion; adapterMemoryBytes=[uint64]$_.AdapterRAM } }); [pscustomobject]@{ osCaption=$os.Caption; osVersion=$os.Version; osBuild=[string]$os.BuildNumber; cpuName=$cpu.Name; logicalProcessors=$cpu.NumberOfLogicalProcessors; memoryTotalBytes=[uint64]$cs.TotalPhysicalMemory; gpus=$gpus } | ConvertTo-Json -Compress -Depth 4"#;
@@ -1464,7 +1471,8 @@ pub(crate) async fn run_report(
         "Reports are generated locally and are never uploaded automatically.".to_owned(),
         "Authentication tokens, passwords, authorization headers and secret fields are redacted.".to_owned(),
         "User home paths are replaced with %USER_HOME% in captured text.".to_owned(),
-        "No full environment-variable dump, IP address inventory, MAC address, hardware serial or process list is collected.".to_owned(),
+        "No full environment-variable dump, local IP inventory, MAC address, hardware serial or process list is collected.".to_owned(),
+        "Connectivity probes contact only the public Minecraft metadata, libraries and assets endpoints; those services necessarily see the public IP address of the network connection.".to_owned(),
         "Crash excerpts and game logs may still contain server names, chat text or player identifiers; review the report before sharing it.".to_owned(),
     ];
     let report = DiagnosticReport {
