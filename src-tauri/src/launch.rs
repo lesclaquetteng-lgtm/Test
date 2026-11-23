@@ -414,11 +414,7 @@ fn resolve_argument_list(
     Ok(output)
 }
 
-fn merge_loader_metadata(
-    base: &Value,
-    loader: &Value,
-    profile_id: &str,
-) -> Result<Value, String> {
+fn merge_loader_metadata(base: &Value, loader: &Value, profile_id: &str) -> Result<Value, String> {
     let mut merged = base.clone();
     merged["id"] = Value::String(profile_id.to_owned());
     if let Some(main_class) = loader.get("mainClass").and_then(Value::as_str) {
@@ -439,10 +435,14 @@ fn merge_loader_metadata(
         .ok_or_else(|| "Mod loader profile has no libraries array".to_owned())?;
     if let Some(target) = merged["libraries"].as_array_mut() {
         for library in loader_libraries {
-            let name = library.get("name").and_then(Value::as_str).unwrap_or_default();
-            if let Some(existing) = target.iter_mut().find(|entry| {
-                entry.get("name").and_then(Value::as_str) == Some(name)
-            }) {
+            let name = library
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if let Some(existing) = target
+                .iter_mut()
+                .find(|entry| entry.get("name").and_then(Value::as_str) == Some(name))
+            {
                 *existing = library.clone();
             } else {
                 target.push(library.clone());
@@ -541,7 +541,9 @@ fn build_launch_arguments(
                 format!("Unable to resolve library {}: {error}", artifact.display())
             })?;
             if !canonical_artifact.starts_with(&canonical_root) {
-                return Err("A library path resolves outside NOVA's approved library stores".to_owned());
+                return Err(
+                    "A library path resolves outside NOVA's approved library stores".to_owned(),
+                );
             }
             resolved = Some(canonical_artifact);
             break;
@@ -801,22 +803,30 @@ pub(crate) async fn launch_instance(
             .join("versions")
             .join(launch_profile_id)
             .join(format!("{launch_profile_id}.json"));
-        let bytes = tokio::fs::read(&loader_path)
-            .await
-            .map_err(|_| "The selected mod loader profile is missing. Repair this instance before launching.".to_owned())?;
+        let bytes = tokio::fs::read(&loader_path).await.map_err(|_| {
+            "The selected mod loader profile is missing. Repair this instance before launching."
+                .to_owned()
+        })?;
         let loader_metadata: Value = serde_json::from_slice(&bytes)
             .map_err(|error| format!("Mod loader metadata is invalid: {error}"))?;
         if loader_metadata.get("id").and_then(Value::as_str) != Some(launch_profile_id)
             || loader_metadata.get("inheritsFrom").and_then(Value::as_str) != Some(game_version)
         {
-            return Err("Mod loader profile does not inherit from this instance's Minecraft version".to_owned());
+            return Err(
+                "Mod loader profile does not inherit from this instance's Minecraft version"
+                    .to_owned(),
+            );
         }
         merge_loader_metadata(&base_metadata, &loader_metadata, launch_profile_id)?
     };
     let required_java = metadata
         .get("javaVersion")
         .and_then(|value| value.get("majorVersion"))
-        .or_else(|| base_metadata.get("javaVersion").and_then(|value| value.get("majorVersion")))
+        .or_else(|| {
+            base_metadata
+                .get("javaVersion")
+                .and_then(|value| value.get("majorVersion"))
+        })
         .and_then(Value::as_u64)
         .map(|major| major as u32)
         .unwrap_or(8);
