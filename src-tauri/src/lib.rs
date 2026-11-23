@@ -242,6 +242,7 @@ pub fn run() {
             modrinth::get_fabric_loader_versions,
             modrinth::install_fabric_loader,
             modrinth::install_modrinth_mod,
+            modrinth::install_modrinth_modpack,
             modrinth::list_instance_mods,
             modrinth::remove_instance_mod
         ])
