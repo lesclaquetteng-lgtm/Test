@@ -846,7 +846,10 @@ fn classify_crash_signatures(
         }
         let mut evidence = Vec::new();
         for line in &lines {
-            if needles.iter().any(|needle| line.to_ascii_lowercase().contains(needle)) {
+            if needles
+                .iter()
+                .any(|needle| line.to_ascii_lowercase().contains(needle))
+            {
                 let excerpt = if line.len() > 500 {
                     line.chars().take(500).collect::<String>()
                 } else {
