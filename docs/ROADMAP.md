@@ -12,19 +12,21 @@ The roadmap is ordered by user value and technical dependencies. A milestone is 
 - [x] Add native Windows compilation to CI and include the required Windows icon resource.
 - [x] Add native performance counters and a Performance diagnostics page.
 - [x] Add a verified, bounded-concurrency HTTP artifact transport.
-- [ ] Wire the transport to official Minecraft metadata and the Vanilla installation pipeline.
+- [x] Wire the verified transport to Mojang metadata and the initial Vanilla installation pipeline.
 - [ ] Add Windows packaging smoke tests and repeatable performance baselines.
 
 ## M1 — Real Vanilla launcher
 
+The first installer milestone is implemented on the feature branch. Native archive extraction, the final launch-argument resolver and process lifecycle remain open before Minecraft can be launched.
+
 - [ ] Detect the Minecraft directory and installed Java runtimes.
-- [ ] Fetch and cache the official version manifest.
-- [ ] Resolve release, snapshot and historical version metadata.
-- [ ] Install client, libraries, assets and natives with bounded downloads.
-- [ ] Verify downloaded artifacts and recover safely from partial failures.
+- [x] Fetch and cache the official version manifest with stale-cache fallback.
+- [x] Resolve official release, snapshot and historical version metadata with manifest SHA-1 verification.
+- [x] Install the client, libraries, asset index, objects and platform-native archives with bounded downloads.
+- [x] Verify downloaded artifacts and resume safely by reusing already verified files after interrupted installs.
 - [ ] Generate launch arguments from version metadata.
 - [ ] Launch and stop Minecraft while streaming logs.
-- [ ] Persist the first isolated instance and its settings.
+- [x] Persist version-specific instance directories and a completion manifest after verified installation.
 
 Acceptance: a clean Windows machine with a supported Java runtime can install and launch a selected official Minecraft version through NOVA.
 
