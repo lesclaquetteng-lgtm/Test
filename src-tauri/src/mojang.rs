@@ -233,7 +233,10 @@ async fn fetch_limited(raw_url: &str, limit: usize) -> Result<Vec<u8>, MojangErr
     if !response.status().is_success() {
         return Err(MojangError::HttpStatus(response.status().as_u16()));
     }
-    if response.content_length().is_some_and(|length| length > limit as u64) {
+    if response
+        .content_length()
+        .is_some_and(|length| length > limit as u64)
+    {
         return Err(MojangError::ResponseTooLarge);
     }
 
@@ -276,7 +279,9 @@ fn safe_relative_path(raw: &str) -> Result<PathBuf, MojangError> {
     let path = Path::new(raw);
     if raw.is_empty()
         || path.is_absolute()
-        || path.components().any(|part| !matches!(part, Component::Normal(_)))
+        || path
+            .components()
+            .any(|part| !matches!(part, Component::Normal(_)))
     {
         return Err(MojangError::UnsafeArtifactPath);
     }
@@ -351,7 +356,10 @@ async fn fetch_manifest_inner(cache_root: &Path) -> Result<VersionManifest, Moja
     let path = cache_root.join("mojang").join("version_manifest_v2.json");
     let cached = fs::read(&path).await.ok();
     if let Some(bytes) = cached.as_ref() {
-        if cache_age(&path).await.is_some_and(|age| age < CACHE_FRESH_FOR) {
+        if cache_age(&path)
+            .await
+            .is_some_and(|age| age < CACHE_FRESH_FOR)
+        {
             if let Ok(manifest) = serde_json::from_slice::<VersionManifest>(bytes) {
                 if !manifest.versions.is_empty() {
                     return Ok(manifest);
@@ -364,9 +372,10 @@ async fn fetch_manifest_inner(cache_root: &Path) -> Result<VersionManifest, Moja
         Ok(bytes) => {
             let manifest: VersionManifest = serde_json::from_slice(&bytes)?;
             if manifest.versions.is_empty()
-                || !manifest.versions.iter().all(|version| {
-                    safe_version_id(&version.id) && valid_sha1(&version.sha1)
-                })
+                || !manifest
+                    .versions
+                    .iter()
+                    .all(|version| safe_version_id(&version.id) && valid_sha1(&version.sha1))
             {
                 return Err(MojangError::InvalidManifest);
             }
@@ -436,10 +445,18 @@ fn current_os_arch() -> &'static str {
 
 fn rule_matches(rule: &LibraryRule) -> bool {
     if let Some(os) = &rule.os {
-        if os.name.as_deref().is_some_and(|name| name != current_os_name()) {
+        if os
+            .name
+            .as_deref()
+            .is_some_and(|name| name != current_os_name())
+        {
             return false;
         }
-        if os.arch.as_deref().is_some_and(|arch| arch != current_os_arch()) {
+        if os
+            .arch
+            .as_deref()
+            .is_some_and(|arch| arch != current_os_arch())
+        {
             return false;
         }
     }
@@ -466,7 +483,11 @@ fn library_allowed(rules: &[LibraryRule]) -> bool {
 
 fn native_classifier(library: &Library) -> Option<String> {
     let template = library.natives.get(current_os_name())?;
-    let arch = if cfg!(target_pointer_width = "64") { "64" } else { "32" };
+    let arch = if cfg!(target_pointer_width = "64") {
+        "64"
+    } else {
+        "32"
+    };
     Some(template.replace("$" + "{arch}", arch))
 }
 
@@ -742,7 +763,11 @@ async fn install_vanilla_inner(
     }
 
     let version_json = serde_json::to_vec_pretty(&details)?;
-    write_atomic(&version_root.join(format!("{version_id}.json")), &version_json).await?;
+    write_atomic(
+        &version_root.join(format!("{version_id}.json")),
+        &version_json,
+    )
+    .await?;
 
     let installed = InstalledInstance {
         id: version_id.to_owned(),
@@ -786,8 +811,17 @@ pub(crate) async fn list_installed_instances(
         Err(error) => return Err(error.to_string()),
     };
     let mut installed = Vec::new();
-    while let Some(entry) = entries.next_entry().await.map_err(|error| error.to_string())? {
-        if !entry.file_type().await.map_err(|error| error.to_string())?.is_dir() {
+    while let Some(entry) = entries
+        .next_entry()
+        .await
+        .map_err(|error| error.to_string())?
+    {
+        if !entry
+            .file_type()
+            .await
+            .map_err(|error| error.to_string())?
+            .is_dir()
+        {
             continue;
         }
         let marker = entry.path().join(".nova-install.json");
@@ -851,7 +885,7 @@ mod tests {
             LibraryRule {
                 action: "disallow".to_owned(),
                 os: Some(RuleOs {
-                    name: Some(if cfg!(windows) { "windows" } else { "linux" }.to_owned()),
+                    name: Some(super::current_os_name().to_owned()),
                     arch: None,
                 }),
                 features: None,
