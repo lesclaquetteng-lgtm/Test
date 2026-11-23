@@ -12,6 +12,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.event.client.player.ClientPreAttackCallback;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
+import net.minecraft.client.option.KeyBinding.Category;
 import net.minecraft.util.Identifier;
 import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
@@ -23,6 +24,7 @@ public final class NovaClient implements ClientModInitializer {
     private static KeyBinding menuKey;
     private static KeyBinding editorKey;
     private static KeyBinding hudToggleKey;
+    private static final Category NOVA_CATEGORY = Category.create(Identifier.of(MOD_ID, "client"));
 
     @Override
     public void onInitializeClient() {
@@ -30,13 +32,13 @@ public final class NovaClient implements ClientModInitializer {
         ClientTelemetry.initialize();
         menuKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.nova-client.menu", InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_RIGHT_SHIFT, "category.nova-client"));
+                GLFW.GLFW_KEY_RIGHT_SHIFT, NOVA_CATEGORY));
         editorKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.nova-client.editor", InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_RIGHT_CONTROL, "category.nova-client"));
+                GLFW.GLFW_KEY_RIGHT_CONTROL, NOVA_CATEGORY));
         hudToggleKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.nova-client.toggle_hud", InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_F8, "category.nova-client"));
+                GLFW.GLFW_KEY_F8, NOVA_CATEGORY));
 
         ClientPreAttackCallback.EVENT.register((client, player, clickCount) -> {
             if (clickCount > 0) ClientTelemetry.recordLeftClick(clickCount);
