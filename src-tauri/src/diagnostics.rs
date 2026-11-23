@@ -97,6 +97,19 @@ pub(crate) struct InstanceInformation {
     pub latest_log_excerpt: Vec<String>,
     pub crash_report_excerpt: Vec<String>,
     pub crash_artifact_names: Vec<String>,
+    pub root_cause_hypotheses: Vec<CrashDiagnosis>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CrashDiagnosis {
+    pub code: String,
+    pub severity: String,
+    pub confidence: String,
+    pub title: String,
+    pub likely_cause: String,
+    pub evidence: Vec<String>,
+    pub recommended_action: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,6 +143,7 @@ pub(crate) struct DiagnosticReport {
     pub system: SystemInformation,
     pub instances: Vec<InstanceInformation>,
     pub network: Vec<NetworkEndpoint>,
+    pub root_cause_hypotheses: Vec<CrashDiagnosis>,
     pub checks: Vec<DiagnosticCheck>,
     pub recent_process_logs: Vec<DiagnosticLog>,
     pub report_path: String,
@@ -732,6 +746,133 @@ async fn collect_system_information() -> SystemInformation {
     }
 }
 
+fn classify_crash_signatures(
+    latest_log: &[String],
+    crash_excerpt: &[String],
+    process_logs: &[DiagnosticLog],
+) -> Vec<CrashDiagnosis> {
+    let mut lines = latest_log
+        .iter()
+        .chain(crash_excerpt.iter())
+        .cloned()
+        .collect::<Vec<_>>();
+    lines.extend(process_logs.iter().map(|entry| entry.line.clone()));
+    let text = lines.join("\n");
+    let lower = text.to_ascii_lowercase();
+    let signatures: &[(&str, &str, &str, &str, &str, &[&str])] = &[
+        (
+            "java.heap.exhausted",
+            "critical",
+            "Insufficient Java heap memory",
+            "Minecraft or a mod requested more heap memory than the selected Java process could provide.",
+            "Increase the instance memory allocation only if the machine has enough free RAM; reduce heavy shaders/mods and check for memory leaks.",
+            &["outofmemoryerror: java heap space", "gc overhead limit exceeded", "could not reserve enough space for object heap"],
+        ),
+        (
+            "java.version.mismatch",
+            "critical",
+            "Java runtime version mismatch",
+            "A class or Minecraft component was compiled for a newer Java bytecode level than the runtime currently selected.",
+            "Install the Java major version required by this Minecraft release and verify JAVA_HOME points to that runtime.",
+            &["unsupportedclassversionerror", "compiled by a more recent version of the java runtime", "class file version"],
+        ),
+        (
+            "classpath.class.missing",
+            "critical",
+            "Required class or library could not be loaded",
+            "The launch classpath may be incomplete, a library may be missing, or a version metadata entry may not match the installed files.",
+            "Run the deep integrity scan and reinstall the affected version or library before trying again.",
+            &["could not find or load main class", "noclassdeffounderror", "classnotfoundexception"],
+        ),
+        (
+            "native.library.failure",
+            "critical",
+            "Native library loading failure",
+            "A platform-native library is missing, incompatible with the OS/architecture, blocked, or not extracted correctly.",
+            "Reinstall the instance natives and confirm that the Java architecture matches the system architecture.",
+            &["unsatisfiedlinkerror", "no lwjgl", "could not load lwjgl", "failed to load native library"],
+        ),
+        (
+            "graphics.opengl.failure",
+            "critical",
+            "Graphics driver or OpenGL initialization failure",
+            "Minecraft could not initialize its graphics context; a GPU driver, OpenGL capability, hybrid-GPU selection or remote desktop layer may be involved.",
+            "Update the GPU driver from the GPU vendor, select the high-performance GPU for Java, and retry without remote desktop or overlays.",
+            &["glfw error", "wgl:", "glx", "opengl", "failed to create window", "pixel format"],
+        ),
+        (
+            "artifact.archive.corrupt",
+            "critical",
+            "Corrupted or invalid archive detected",
+            "A JAR or ZIP file may be truncated, corrupted, or different from the expected official artifact.",
+            "Run the deep integrity scan and reinstall the affected version; do not manually reuse an unverified JAR.",
+            &["zipexception", "zip end header not found", "invalid or unsupported zip format", "zip file is empty"],
+        ),
+        (
+            "network.connection.failure",
+            "warning",
+            "Network or DNS connection failure",
+            "A download, authentication endpoint or server connection could not be reached from the current network.",
+            "Check DNS, firewall, proxy/VPN and TLS inspection settings; compare the endpoint checks with the failing URL in the logs.",
+            &["unknownhostexception", "connection timed out", "connectexception", "network is unreachable", "connection refused"],
+        ),
+        (
+            "filesystem.permission.failure",
+            "critical",
+            "File access or permission failure",
+            "The process could not read, create or modify a required file or directory.",
+            "Check the instance folder permissions, disk protection rules and antivirus quarantine; avoid running the launcher as administrator unless the directory ACL requires it.",
+            &["accessdeniedexception", "access is denied", "permission denied", "operation not permitted"],
+        ),
+        (
+            "mod.compatibility.failure",
+            "warning",
+            "Mod or loader compatibility conflict",
+            "A mod, loader or dependency appears incompatible with the current Minecraft version or with another installed component.",
+            "Review the first dependency or compatibility error, then temporarily disable the named mod and test again.",
+            &["mod resolution failed", "incompatible mod set", "requires minecraft", "failed to load mod", "mixin apply failed"],
+        ),
+    ];
+
+    let mut diagnoses = Vec::new();
+    for (code, severity, title, cause, action, needles) in signatures {
+        let matched = needles
+            .iter()
+            .filter(|needle| lower.contains(**needle))
+            .copied()
+            .collect::<Vec<_>>();
+        if matched.is_empty() {
+            continue;
+        }
+        let mut evidence = Vec::new();
+        for line in &lines {
+            if needles.iter().any(|needle| line.to_ascii_lowercase().contains(needle)) {
+                let excerpt = if line.len() > 500 {
+                    line.chars().take(500).collect::<String>()
+                } else {
+                    line.clone()
+                };
+                if !evidence.contains(&excerpt) {
+                    evidence.push(excerpt);
+                }
+                if evidence.len() >= 4 {
+                    break;
+                }
+            }
+        }
+        diagnoses.push(CrashDiagnosis {
+            code: (*code).to_owned(),
+            severity: (*severity).to_owned(),
+            confidence: if matched.len() > 1 { "high" } else { "medium" }.to_owned(),
+            title: (*title).to_owned(),
+            likely_cause: (*cause).to_owned(),
+            evidence,
+            recommended_action: (*action).to_owned(),
+        });
+    }
+    diagnoses
+}
+
 fn inspect_instance(
     data_root: &Path,
     cache_root: &Path,
@@ -1255,6 +1396,24 @@ fn inspect_instance(
         None,
     );
 
+    let runtime_logs = process_log_snapshot(Some(instance_id));
+    let root_cause_hypotheses =
+        classify_crash_signatures(&latest_log_excerpt, &crash_report_excerpt, &runtime_logs);
+
+    for diagnosis in &root_cause_hypotheses {
+        add_check(
+            checks,
+            &format!("instance.{instance_id}.diagnosis.{}", diagnosis.code),
+            "crash-analysis",
+            &diagnosis.severity,
+            "warning",
+            &diagnosis.title,
+            &diagnosis.likely_cause,
+            diagnosis.evidence.clone(),
+            Some(diagnosis.recommended_action.clone()),
+        );
+    }
+
     InstanceInformation {
         id: instance_id.to_owned(),
         version_type: marker.version_type,
@@ -1273,6 +1432,7 @@ fn inspect_instance(
         latest_log_excerpt,
         crash_report_excerpt,
         crash_artifact_names,
+        root_cause_hypotheses,
     }
 }
 
@@ -1494,6 +1654,10 @@ pub(crate) async fn run_report(
         );
     }
 
+    let root_cause_hypotheses = instances
+        .iter()
+        .flat_map(|instance| instance.root_cause_hypotheses.clone())
+        .collect::<Vec<_>>();
     let summary = summarize(&checks);
     let privacy = vec![
         "Reports are generated locally and are never uploaded automatically.".to_owned(),
@@ -1513,6 +1677,7 @@ pub(crate) async fn run_report(
         system,
         instances,
         network,
+        root_cause_hypotheses,
         checks,
         recent_process_logs: logs,
         report_path: format!("%NOVA_DATA%/diagnostics/reports/{id}.json"),
