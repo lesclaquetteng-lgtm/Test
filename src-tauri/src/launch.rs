@@ -99,6 +99,8 @@ struct InstallMarker {
     #[serde(default)]
     loader_version: Option<String>,
     #[serde(default)]
+    launch_version: Option<String>,
+    #[serde(default)]
     instance_type: Option<String>,
     #[serde(default)]
     display_name: Option<String>,
@@ -106,6 +108,10 @@ struct InstallMarker {
     modrinth_project_id: Option<String>,
     #[serde(default)]
     modrinth_version_id: Option<String>,
+    #[serde(default)]
+    memory_mb: Option<u32>,
+    #[serde(default)]
+    jvm_arguments: Option<Vec<String>>,
 }
 
 fn sha1_file(path: &Path) -> Result<String, String> {
@@ -160,7 +166,7 @@ fn java_candidates() -> Vec<PathBuf> {
     candidates
 }
 
-fn discover_java(required_major: u32) -> Result<(PathBuf, u32), String> {
+pub(crate) fn discover_java(required_major: u32) -> Result<(PathBuf, u32), String> {
     let mut compatible = Vec::new();
     let mut diagnostic = Vec::new();
 
@@ -306,7 +312,7 @@ fn offline_uuid(username: &str) -> String {
 }
 
 fn placeholders(
-    instance_id: &str,
+    launch_profile_id: &str,
     username: &str,
     uuid: &str,
     memory_mb: u32,
@@ -321,7 +327,7 @@ fn placeholders(
     let path = |value: &Path| value.to_string_lossy().into_owned();
     HashMap::from([
         ("auth_player_name".to_owned(), username.to_owned()),
-        ("version_name".to_owned(), instance_id.to_owned()),
+        ("version_name".to_owned(), launch_profile_id.to_owned()),
         ("game_directory".to_owned(), path(instance_root)),
         ("assets_root".to_owned(), path(assets_root)),
         ("assets_index_name".to_owned(), asset_index.to_owned()),
@@ -408,9 +414,70 @@ fn resolve_argument_list(
     Ok(output)
 }
 
+fn merge_loader_metadata(base: &Value, loader: &Value, profile_id: &str) -> Result<Value, String> {
+    let mut merged = base.clone();
+    merged["id"] = Value::String(profile_id.to_owned());
+    if let Some(main_class) = loader.get("mainClass").and_then(Value::as_str) {
+        if main_class.trim().is_empty() {
+            return Err("Mod loader profile has an empty main class".to_owned());
+        }
+        merged["mainClass"] = Value::String(main_class.to_owned());
+    } else {
+        return Err("Mod loader profile does not provide a main class".to_owned());
+    }
+
+    if !merged.get("libraries").is_some_and(Value::is_array) {
+        merged["libraries"] = serde_json::json!([]);
+    }
+    let loader_libraries = loader
+        .get("libraries")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "Mod loader profile has no libraries array".to_owned())?;
+    if let Some(target) = merged["libraries"].as_array_mut() {
+        for library in loader_libraries {
+            let name = library
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if let Some(existing) = target
+                .iter_mut()
+                .find(|entry| entry.get("name").and_then(Value::as_str) == Some(name))
+            {
+                *existing = library.clone();
+            } else {
+                target.push(library.clone());
+            }
+        }
+    }
+
+    if !merged.get("arguments").is_some_and(Value::is_object) {
+        merged["arguments"] = serde_json::json!({});
+    }
+    if let Some(arguments) = loader.get("arguments").and_then(Value::as_object) {
+        for key in ["jvm", "game"] {
+            if let Some(additions) = arguments.get(key).and_then(Value::as_array) {
+                if !merged["arguments"].get(key).is_some_and(Value::is_array) {
+                    merged["arguments"][key] = serde_json::json!([]);
+                }
+                if let Some(target) = merged["arguments"][key].as_array_mut() {
+                    for item in additions {
+                        if !target.contains(item) {
+                            target.push(item.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if let Some(arguments) = loader.get("minecraftArguments").and_then(Value::as_str) {
+        merged["minecraftArguments"] = Value::String(arguments.to_owned());
+    }
+    Ok(merged)
+}
+
 fn build_launch_arguments(
     metadata: &Value,
-    instance_id: &str,
+    launch_profile_id: &str,
     username: &str,
     memory_mb: u32,
     install: &InstallMarker,
@@ -454,24 +521,36 @@ fn build_launch_arguments(
             continue;
         };
         let relative = safe_relative_path(path)?;
-        let artifact = libraries_root.join(relative);
-        let metadata = std::fs::metadata(&artifact)
-            .map_err(|_| format!("A required library is missing: {}", artifact.display()))?;
-        if !metadata.is_file() {
-            return Err(format!(
-                "A required library is not a file: {}",
-                artifact.display()
-            ));
+        let mut resolved = None;
+        let instance_libraries_root = instance_root.join("libraries");
+        for root in [&libraries_root, &instance_libraries_root] {
+            if !root.exists() {
+                continue;
+            }
+            let artifact = root.join(&relative);
+            let Ok(metadata) = std::fs::metadata(&artifact) else {
+                continue;
+            };
+            if !metadata.is_file() {
+                continue;
+            }
+            let canonical_root = std::fs::canonicalize(root)
+                .map_err(|error| format!("Unable to resolve a library directory: {error}"))?;
+            let canonical_artifact = std::fs::canonicalize(&artifact).map_err(|error| {
+                format!("Unable to resolve library {}: {error}", artifact.display())
+            })?;
+            if !canonical_artifact.starts_with(&canonical_root) {
+                return Err(
+                    "A library path resolves outside NOVA's approved library stores".to_owned(),
+                );
+            }
+            resolved = Some(canonical_artifact);
+            break;
         }
-        let canonical_library_root = std::fs::canonicalize(&libraries_root)
-            .map_err(|error| format!("Unable to resolve the library directory: {error}"))?;
-        let canonical_artifact = std::fs::canonicalize(&artifact).map_err(|error| {
-            format!("Unable to resolve library {}: {error}", artifact.display())
+        let artifact = resolved.ok_or_else(|| {
+            format!("A required library is missing from the shared and instance stores: {path}")
         })?;
-        if !canonical_artifact.starts_with(&canonical_library_root) {
-            return Err("A library path resolves outside NOVA's shared library store".to_owned());
-        }
-        classpath_entries.push(canonical_artifact);
+        classpath_entries.push(artifact);
     }
 
     let separator = if cfg!(windows) { ";" } else { ":" };
@@ -482,7 +561,7 @@ fn build_launch_arguments(
         .join(separator);
     let username_uuid = offline_uuid(username);
     let values = placeholders(
-        instance_id,
+        launch_profile_id,
         username,
         &username_uuid,
         memory_mb,
@@ -539,7 +618,7 @@ fn build_launch_arguments(
         game.extend(["--username".to_owned(), username.to_owned()]);
     }
     if !game.iter().any(|argument| argument == "--version") {
-        game.extend(["--version".to_owned(), instance_id.to_owned()]);
+        game.extend(["--version".to_owned(), launch_profile_id.to_owned()]);
     }
     if !game.iter().any(|argument| argument == "--gameDir") {
         game.extend([
@@ -570,6 +649,35 @@ fn build_launch_arguments(
     }
     if !game.iter().any(|argument| argument == "--userProperties") {
         game.extend(["--userProperties".to_owned(), "{}".to_owned()]);
+    }
+
+    if let Some(custom_arguments) = &install.jvm_arguments {
+        if custom_arguments.len() > 32 {
+            return Err("This instance has too many custom JVM arguments".to_owned());
+        }
+        for argument in custom_arguments {
+            let value = argument.trim();
+            if value.is_empty()
+                || value.len() > 512
+                || value.chars().any(char::is_control)
+                || value.starts_with('@')
+                || value == "-cp"
+                || value == "-classpath"
+                || value.starts_with("-Xmx")
+                || value.starts_with("-Xms")
+                || value.starts_with("-Djava.library.path")
+                || value.starts_with("-Duser.dir")
+                || value.starts_with("-Djava.system.class.loader")
+                || value.starts_with("-javaagent")
+                || value.starts_with("-agentlib")
+                || value.starts_with("-agentpath")
+            {
+                return Err(format!(
+                    "This instance contains a reserved or unsafe JVM argument: {value}"
+                ));
+            }
+            jvm.push(value.to_owned());
+        }
     }
 
     jvm.push(main_class.to_owned());
@@ -621,9 +729,6 @@ pub(crate) async fn launch_instance(
             "Offline player names must contain 3–16 letters, digits or underscores".to_owned(),
         );
     }
-    if !(1024..=32768).contains(&memory_mb) {
-        return Err("Memory allocation must be between 1024 MB and 32768 MB".to_owned());
-    }
     {
         let active = sessions()
             .lock()
@@ -642,6 +747,10 @@ pub(crate) async fn launch_instance(
         .map_err(|_| "The instance verification marker is invalid".to_owned())?;
     if marker.id != instance_id || !safe_id(&marker.asset_index) || marker.client_sha1.len() != 40 {
         return Err("The instance verification marker does not match this installation".to_owned());
+    }
+    let memory_mb = marker.memory_mb.unwrap_or(memory_mb);
+    if !(1024..=32768).contains(&memory_mb) {
+        return Err("Memory allocation must be between 1024 MB and 32768 MB".to_owned());
     }
 
     let game_version = marker.game_version.as_deref().unwrap_or(&instance_id);
@@ -674,24 +783,56 @@ pub(crate) async fn launch_instance(
             "Minecraft version metadata is missing. Repair this instance before launching."
                 .to_owned()
         })?;
-    let metadata: Value = serde_json::from_slice(&metadata_bytes)
-        .map_err(|error| format!("Official version metadata is invalid: {error}"))?;
-    if metadata.get("id").and_then(Value::as_str) != Some(game_version) {
+    let base_metadata: Value = serde_json::from_slice(&metadata_bytes)
+        .map_err(|error| format!("Minecraft version metadata is invalid: {error}"))?;
+    if base_metadata.get("id").and_then(Value::as_str) != Some(game_version) {
         return Err(
             "Minecraft version metadata does not match this instance's base game version"
                 .to_owned(),
         );
     }
+    let launch_profile_id = marker.launch_version.as_deref().unwrap_or(game_version);
+    if !safe_id(launch_profile_id) {
+        return Err("The mod loader launch profile identifier is invalid".to_owned());
+    }
+    let metadata = if launch_profile_id == game_version {
+        base_metadata.clone()
+    } else {
+        let loader_path = instance_root
+            .join("versions")
+            .join(launch_profile_id)
+            .join(format!("{launch_profile_id}.json"));
+        let bytes = tokio::fs::read(&loader_path).await.map_err(|_| {
+            "The selected mod loader profile is missing. Repair this instance before launching."
+                .to_owned()
+        })?;
+        let loader_metadata: Value = serde_json::from_slice(&bytes)
+            .map_err(|error| format!("Mod loader metadata is invalid: {error}"))?;
+        if loader_metadata.get("id").and_then(Value::as_str) != Some(launch_profile_id)
+            || loader_metadata.get("inheritsFrom").and_then(Value::as_str) != Some(game_version)
+        {
+            return Err(
+                "Mod loader profile does not inherit from this instance's Minecraft version"
+                    .to_owned(),
+            );
+        }
+        merge_loader_metadata(&base_metadata, &loader_metadata, launch_profile_id)?
+    };
     let required_java = metadata
         .get("javaVersion")
         .and_then(|value| value.get("majorVersion"))
+        .or_else(|| {
+            base_metadata
+                .get("javaVersion")
+                .and_then(|value| value.get("majorVersion"))
+        })
         .and_then(Value::as_u64)
         .map(|major| major as u32)
         .unwrap_or(8);
     let (java_path, java_major) = discover_java(required_java)?;
     let arguments = build_launch_arguments(
         &metadata,
-        &instance_id,
+        launch_profile_id,
         &player_name,
         memory_mb,
         &marker,
@@ -851,6 +992,13 @@ pub(crate) async fn launch_instance(
     });
 
     Ok(snapshot)
+}
+
+pub(crate) fn is_instance_running(instance_id: &str) -> Result<bool, String> {
+    let active = sessions()
+        .lock()
+        .map_err(|_| "Launch session registry is unavailable".to_owned())?;
+    Ok(active.contains_key(instance_id))
 }
 
 pub(crate) fn list_sessions() -> Result<Vec<LaunchSession>, String> {

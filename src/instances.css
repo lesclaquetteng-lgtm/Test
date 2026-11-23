@@ -160,3 +160,119 @@
 .diagnostic-hypothesis details { margin-top: 8px; }
 .diagnostic-hypothesis details summary { color: #a3b394; font: 8px var(--mono); cursor: pointer; }
 .diagnostic-hypothesis details pre { max-height: 180px; margin-top: 7px; padding: 9px; overflow: auto; border-radius: 5px; background: #090d0a; color: #adb8a6; font: 8px/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+
+/* Per-instance management controls */
+.instance-card-title { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
+.instance-card-title > strong { overflow-wrap: anywhere; }
+.instance-card-title > small { color: #75816f; font: 8px var(--mono); overflow-wrap: anywhere; }
+.instance-card-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.instance-card-icon-action {
+  display: grid;
+  flex: 0 0 29px;
+  place-items: center;
+  width: 29px;
+  height: 29px;
+  border: 1px solid rgba(199,220,181,.12);
+  border-radius: 5px;
+  background: rgba(180,207,148,.035);
+  color: #9cab8e;
+  cursor: pointer;
+  transition: .16s ease;
+}
+.instance-card-icon-action:hover:not(:disabled) {
+  border-color: rgba(190,220,153,.32);
+  background: rgba(180,207,148,.1);
+  color: #d6e4c6;
+}
+.instance-card-icon-action:disabled { opacity: .38; cursor: not-allowed; }
+.instance-card-icon-action.danger {
+  border-color: rgba(220,130,116,.14);
+  color: #bb8275;
+}
+.instance-card-icon-action.danger:hover:not(:disabled) {
+  border-color: rgba(230,126,111,.38);
+  background: rgba(150,57,48,.13);
+  color: #edaaa0;
+}
+.instance-manage-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid rgba(174,204,143,.17);
+  border-radius: 7px;
+  background: rgba(8,14,9,.52);
+}
+.instance-manage-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.instance-manage-heading strong { color: #d9e5d0; font-size: 9px; }
+.instance-manage-heading > button {
+  display: grid;
+  width: 25px;
+  height: 25px;
+  place-items: center;
+  border: 1px solid rgba(210,230,209,.09);
+  border-radius: 4px;
+  background: transparent;
+  color: #8e9b83;
+  cursor: pointer;
+}
+.instance-manage-panel > p { margin: -3px 0 0; color: #85917c; font-size: 8px; line-height: 1.55; }
+.instance-manage-panel > p.warning { color: #d49b8e; }
+.instance-manage-panel > input,
+.instance-manage-panel label > select,
+.instance-manage-panel label > textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(210,230,209,.13);
+  border-radius: 5px;
+  outline: 0;
+  background: #0a100b;
+  color: #dbe6d5;
+  font: 9px "Segoe UI", system-ui, sans-serif;
+}
+.instance-manage-panel > input,
+.instance-manage-panel label > select { height: 33px; padding: 0 9px; }
+.instance-manage-panel label { display: flex; flex-direction: column; gap: 5px; color: #86947b; font: 8px var(--mono); }
+.instance-manage-panel label > textarea { padding: 8px 9px; resize: vertical; font: 8px/1.55 var(--mono); }
+.instance-manage-panel > input:focus,
+.instance-manage-panel label > select:focus,
+.instance-manage-panel label > textarea:focus { border-color: rgba(174,204,143,.42); }
+.instance-manage-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.instance-manage-actions > button {
+  display: inline-flex;
+  min-height: 29px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid rgba(184,211,151,.22);
+  border-radius: 5px;
+  background: rgba(154,187,115,.12);
+  color: #c9d9b9;
+  font-size: 8px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.instance-manage-actions > button:hover:not(:disabled) { background: rgba(154,187,115,.2); color: #eff8e8; }
+.instance-manage-actions > button:disabled { opacity: .42; cursor: not-allowed; }
+.instance-manage-actions > button.subtle {
+  border-color: rgba(210,230,209,.1);
+  background: rgba(210,230,209,.025);
+  color: #8e9b83;
+}
+.instance-manage-actions > button.danger {
+  border-color: rgba(220,130,116,.25);
+  background: rgba(150,57,48,.18);
+  color: #e1a198;
+}
+.instance-action-progress, .instance-action-notice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  color: #9ba78f;
+  font: 8px var(--mono);
+}
+.instance-action-notice { color: #a7d298; }

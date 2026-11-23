@@ -117,6 +117,8 @@ pub(crate) struct InstalledInstance {
     #[serde(default)]
     pub loader_version: Option<String>,
     #[serde(default)]
+    pub launch_version: Option<String>,
+    #[serde(default)]
     pub instance_type: Option<String>,
     #[serde(default)]
     pub display_name: Option<String>,
@@ -124,6 +126,10 @@ pub(crate) struct InstalledInstance {
     pub modrinth_project_id: Option<String>,
     #[serde(default)]
     pub modrinth_version_id: Option<String>,
+    #[serde(default)]
+    pub memory_mb: Option<u32>,
+    #[serde(default)]
+    pub jvm_arguments: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -858,10 +864,13 @@ async fn install_vanilla_inner(
         game_version: Some(version_id.to_owned()),
         loader: None,
         loader_version: None,
+        launch_version: None,
         instance_type: Some("vanilla".to_owned()),
         display_name: Some(format!("Minecraft {version_id}")),
         modrinth_project_id: None,
         modrinth_version_id: None,
+        memory_mb: None,
+        jvm_arguments: None,
     };
     let marker = serde_json::to_vec_pretty(&installed)?;
     write_atomic(&instance_root.join(".nova-install.json"), &marker).await?;

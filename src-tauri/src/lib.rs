@@ -4,7 +4,9 @@ use tauri::{Emitter, Manager};
 
 pub(crate) mod diagnostics;
 pub(crate) mod downloader;
+pub(crate) mod instance_manager;
 pub(crate) mod launch;
+pub(crate) mod loaders;
 pub(crate) mod modrinth;
 pub(crate) mod mojang;
 pub(crate) mod natives;
@@ -244,7 +246,15 @@ pub fn run() {
             modrinth::install_modrinth_mod,
             modrinth::install_modrinth_modpack,
             modrinth::list_instance_mods,
-            modrinth::remove_instance_mod
+            modrinth::remove_instance_mod,
+            instance_manager::rename_instance,
+            instance_manager::duplicate_instance,
+            instance_manager::delete_instance,
+            instance_manager::update_instance_settings,
+            instance_manager::repair_instance,
+            instance_manager::open_instance_folder,
+            loaders::list_loader_versions_command,
+            loaders::install_loader
         ])
         .run(tauri::generate_context!())
         .expect("error while running NOVA Launcher");
