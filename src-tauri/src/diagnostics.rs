@@ -866,7 +866,7 @@ fn classify_crash_signatures(
         diagnoses.push(CrashDiagnosis {
             code: (*code).to_owned(),
             severity: (*severity).to_owned(),
-            confidence: if matched.len() > 1 { "high" } else { "medium" }.to_owned(),
+            confidence: if evidence.len() > 1 { "high" } else { "medium" }.to_owned(),
             title: (*title).to_owned(),
             likely_cause: (*cause).to_owned(),
             evidence,
