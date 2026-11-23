@@ -95,7 +95,8 @@ struct InstallMarker {
 }
 
 fn sha1_file(path: &Path) -> Result<String, String> {
-    let mut file = File::open(path).map_err(|error| format!("Unable to open Minecraft client: {error}"))?;
+    let mut file =
+        File::open(path).map_err(|error| format!("Unable to open Minecraft client: {error}"))?;
     let mut digest = Sha1::new();
     let mut buffer = [0_u8; 128 * 1024];
     loop {
@@ -116,10 +117,11 @@ fn sha1_file(path: &Path) -> Result<String, String> {
 }
 
 fn parse_java_major(output: &str) -> Option<u32> {
-    let version = output
-        .split('"')
-        .nth(1)
-        .or_else(|| output.lines().find(|line| line.to_ascii_lowercase().contains("version")))?;
+    let version = output.split('"').nth(1).or_else(|| {
+        output
+            .lines()
+            .find(|line| line.to_ascii_lowercase().contains("version"))
+    })?;
     let version = version.trim();
     let mut parts = version.split('.');
     let first = parts.next()?.parse::<u32>().ok()?;
@@ -136,7 +138,11 @@ fn java_candidates() -> Vec<PathBuf> {
         let binary = if cfg!(windows) { "java.exe" } else { "java" };
         candidates.push(PathBuf::from(home).join("bin").join(binary));
     }
-    candidates.push(PathBuf::from(if cfg!(windows) { "java.exe" } else { "java" }));
+    candidates.push(PathBuf::from(if cfg!(windows) {
+        "java.exe"
+    } else {
+        "java"
+    }));
     candidates
 }
 
@@ -145,7 +151,10 @@ fn discover_java(required_major: u32) -> Result<(PathBuf, u32), String> {
     let mut diagnostic = Vec::new();
 
     for candidate in java_candidates() {
-        let output = match std::process::Command::new(&candidate).arg("-version").output() {
+        let output = match std::process::Command::new(&candidate)
+            .arg("-version")
+            .output()
+        {
             Ok(output) if output.status.success() => output,
             Ok(_) => {
                 diagnostic.push(format!("{} returned an error", candidate.display()));
@@ -162,7 +171,10 @@ fn discover_java(required_major: u32) -> Result<(PathBuf, u32), String> {
             String::from_utf8_lossy(&output.stdout)
         );
         let Some(major) = parse_java_major(&text) else {
-            diagnostic.push(format!("{} returned an unrecognized version", candidate.display()));
+            diagnostic.push(format!(
+                "{} returned an unrecognized version",
+                candidate.display()
+            ));
             continue;
         };
         if major < required_major {
@@ -271,7 +283,12 @@ fn offline_uuid(username: &str) -> String {
     let mut bytes = md5::compute(format!("OfflinePlayer:{username}")).0;
     bytes[6] = (bytes[6] & 0x0f) | 0x30;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    let mut output = String::with_capacity(32);
+    for byte in bytes {
+        use std::fmt::Write as _;
+        let _ = write!(output, "{byte:02x}");
+    }
+    output
 }
 
 fn placeholders(
@@ -303,9 +320,19 @@ fn placeholders(
         ("user_properties".to_owned(), "{}".to_owned()),
         ("natives_directory".to_owned(), path(natives_root)),
         ("launcher_name".to_owned(), "NOVA".to_owned()),
-        ("launcher_version".to_owned(), env!("CARGO_PKG_VERSION").to_owned()),
+        (
+            "launcher_version".to_owned(),
+            env!("CARGO_PKG_VERSION").to_owned(),
+        ),
         ("classpath".to_owned(), classpath.to_owned()),
-        ("classpath_separator".to_owned(), if cfg!(windows) { ";".to_owned() } else { ":".to_owned() }),
+        (
+            "classpath_separator".to_owned(),
+            if cfg!(windows) {
+                ";".to_owned()
+            } else {
+                ":".to_owned()
+            },
+        ),
         ("library_directory".to_owned(), path(libraries_root)),
         ("resolution_width".to_owned(), "1280".to_owned()),
         ("resolution_height".to_owned(), "720".to_owned()),
@@ -319,7 +346,9 @@ fn expand_argument(raw: &str, values: &HashMap<String, String>) -> Result<String
         expanded = expanded.replace(&format!("${{{key}}}"), value);
     }
     if expanded.contains("${") {
-        return Err(format!("Unsupported unresolved launch variable: {expanded}"));
+        return Err(format!(
+            "Unsupported unresolved launch variable: {expanded}"
+        ));
     }
     Ok(expanded)
 }
@@ -414,12 +443,16 @@ fn build_launch_arguments(
         let metadata = std::fs::metadata(&artifact)
             .map_err(|_| format!("A required library is missing: {}", artifact.display()))?;
         if !metadata.is_file() {
-            return Err(format!("A required library is not a file: {}", artifact.display()));
+            return Err(format!(
+                "A required library is not a file: {}",
+                artifact.display()
+            ));
         }
         let canonical_library_root = std::fs::canonicalize(&libraries_root)
             .map_err(|error| format!("Unable to resolve the library directory: {error}"))?;
-        let canonical_artifact = std::fs::canonicalize(&artifact)
-            .map_err(|error| format!("Unable to resolve library {}: {error}", artifact.display()))?;
+        let canonical_artifact = std::fs::canonicalize(&artifact).map_err(|error| {
+            format!("Unable to resolve library {}: {error}", artifact.display())
+        })?;
         if !canonical_artifact.starts_with(&canonical_library_root) {
             return Err("A library path resolves outside NOVA's shared library store".to_owned());
         }
@@ -464,7 +497,10 @@ fn build_launch_arguments(
             natives_root.to_string_lossy()
         ));
     }
-    if !jvm.iter().any(|argument| argument == "-cp" || argument == "-classpath") {
+    if !jvm
+        .iter()
+        .any(|argument| argument == "-cp" || argument == "-classpath")
+    {
         jvm.push("-cp".to_owned());
         jvm.push(classpath);
     }
@@ -526,12 +562,8 @@ fn build_launch_arguments(
     Ok(jvm)
 }
 
-async fn forward_logs<R>(
-    reader: R,
-    app: AppHandle,
-    instance_id: String,
-    stream_name: &'static str,
-) where
+async fn forward_logs<R>(reader: R, app: AppHandle, instance_id: String, stream_name: &'static str)
+where
     R: tokio::io::AsyncRead + Unpin + Send + 'static,
 {
     let mut lines = BufReader::new(reader).lines();
@@ -569,7 +601,9 @@ pub(crate) async fn launch_instance(
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
     {
-        return Err("Offline player names must contain 3–16 letters, digits or underscores".to_owned());
+        return Err(
+            "Offline player names must contain 3–16 letters, digits or underscores".to_owned(),
+        );
     }
     if !(1024..=32768).contains(&memory_mb) {
         return Err("Memory allocation must be between 1024 MB and 32768 MB".to_owned());
@@ -585,9 +619,9 @@ pub(crate) async fn launch_instance(
 
     let instance_root = data_root.join("instances").join(&instance_id);
     let marker_path = instance_root.join(".nova-install.json");
-    let marker_bytes = tokio::fs::read(&marker_path)
-        .await
-        .map_err(|_| "This instance is not installed or its verification marker is missing".to_owned())?;
+    let marker_bytes = tokio::fs::read(&marker_path).await.map_err(|_| {
+        "This instance is not installed or its verification marker is missing".to_owned()
+    })?;
     let marker: InstallMarker = serde_json::from_slice(&marker_bytes)
         .map_err(|_| "The instance verification marker is invalid".to_owned())?;
     if marker.id != instance_id || !safe_id(&marker.asset_index) || marker.client_sha1.len() != 40 {
@@ -729,12 +763,27 @@ pub(crate) async fn launch_instance(
             }
         };
         let (state, exit_code, message) = match status {
-            Ok(status) if status.success() => ("exited", status.code(), Some("Minecraft closed normally".to_owned())),
-            Ok(status) => ("exited", status.code(), Some("Minecraft exited with an error code".to_owned())),
-            Err(error) => ("failed", None, Some(format!("Unable to monitor Minecraft process: {error}"))),
+            Ok(status) if status.success() => (
+                "exited",
+                status.code(),
+                Some("Minecraft closed normally".to_owned()),
+            ),
+            Ok(status) => (
+                "exited",
+                status.code(),
+                Some("Minecraft exited with an error code".to_owned()),
+            ),
+            Err(error) => (
+                "failed",
+                None,
+                Some(format!("Unable to monitor Minecraft process: {error}")),
+            ),
         };
         if let Ok(mut active) = sessions().lock() {
-            if active.get(&monitor_id).is_some_and(|session| session.snapshot.pid == pid) {
+            if active
+                .get(&monitor_id)
+                .is_some_and(|session| session.snapshot.pid == pid)
+            {
                 active.remove(&monitor_id);
             }
         }
@@ -757,7 +806,10 @@ pub(crate) fn list_sessions() -> Result<Vec<LaunchSession>, String> {
     let active = sessions()
         .lock()
         .map_err(|_| "Launch session registry is unavailable".to_owned())?;
-    Ok(active.values().map(|session| session.snapshot.clone()).collect())
+    Ok(active
+        .values()
+        .map(|session| session.snapshot.clone())
+        .collect())
 }
 
 pub(crate) fn stop_instance(instance_id: &str) -> Result<(), String> {
@@ -775,14 +827,17 @@ pub(crate) fn stop_instance(instance_id: &str) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{expand_argument, offline_uuid, parse_java_major, safe_relative_path, rules_allow};
+    use super::{expand_argument, offline_uuid, parse_java_major, rules_allow, safe_relative_path};
     use serde_json::json;
     use std::collections::HashMap;
 
     #[test]
     fn parses_legacy_and_modern_java_versions() {
         assert_eq!(parse_java_major("java version \"1.8.0_402\""), Some(8));
-        assert_eq!(parse_java_major("openjdk version \"21.0.2\" 2024-01-16"), Some(21));
+        assert_eq!(
+            parse_java_major("openjdk version \"21.0.2\" 2024-01-16"),
+            Some(21)
+        );
     }
 
     #[test]
