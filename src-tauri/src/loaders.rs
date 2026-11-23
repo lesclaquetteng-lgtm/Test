@@ -129,39 +129,39 @@ fn version_key(value: &str) -> Vec<(u8, String)> {
     let mut parts = Vec::new();
     let mut current = String::new();
     let mut numeric: Option<bool> = None;
+
+    let flush = |current: &mut String, numeric: Option<bool>, parts: &mut Vec<(u8, String)>| {
+        if current.is_empty() {
+            return;
+        }
+        let (kind, token) = if numeric == Some(true) {
+            let normalized = current.trim_start_matches('0');
+            let normalized = if normalized.is_empty() { "0" } else { normalized };
+            let padded = format!("{:0>20}", normalized);
+            (0, padded)
+        } else {
+            (1, current.to_ascii_lowercase())
+        };
+        parts.push((kind, token));
+        current.clear();
+    };
+
     for character in value.chars() {
         if !character.is_ascii_alphanumeric() {
-            if !current.is_empty() {
-                let token = if numeric == Some(true) {
-                current.parse::<u64>().unwrap_or(u64::MAX).to_string()
-            } else {
-                current.to_ascii_lowercase()
-            };
-            parts.push((u8::from(numeric == Some(false)), token));
-                current.clear();
-            }
+            flush(&mut current, numeric, &mut parts);
             numeric = None;
             continue;
         }
         let is_numeric = character.is_ascii_digit();
-        if numeric.is_some_and(|previous| previous != is_numeric) && !current.is_empty() {
-            let token = if numeric == Some(true) {
-            current.parse::<u64>().unwrap_or(u64::MAX).to_string()
-        } else {
-            current.to_ascii_lowercase()
-        };
-        parts.push((u8::from(numeric == Some(false)), token));
-            current.clear();
+        if numeric.is_some_and(|previous| previous != is_numeric) {
+            flush(&mut current, numeric, &mut parts);
         }
         numeric = Some(is_numeric);
         current.push(character);
     }
-    if !current.is_empty() {
-        parts.push((u8::from(numeric == Some(false)), current.to_ascii_lowercase()));
-    }
+    flush(&mut current, numeric, &mut parts);
     parts
 }
-
 fn is_stable(version: &str) -> bool {
     let lower = version.to_ascii_lowercase();
     !["alpha", "beta", "rc", "snapshot", "pre", "dev"]
@@ -569,7 +569,7 @@ fn copy_loader_libraries(source: &Path, destination: &Path) -> Result<usize, Str
                 std::fs::create_dir_all(&destination_path).map_err(|error| error.to_string())?;
                 visit(&source_path, &destination_path, canonical_root, files)?;
             } else if kind.is_file() {
-                let relative = source_path.strip_prefix(canonical_root).map_err(|error| error.to_string())?;
+                let relative = canonical.strip_prefix(canonical_root).map_err(|error| error.to_string())?;
                 if relative.components().any(|part| !matches!(part, std::path::Component::Normal(_))) {
                     return Err("Loader library contains an unsafe relative path".to_owned());
                 }
@@ -659,9 +659,10 @@ pub(crate) async fn install_loader_inner(
     instance_id: &str,
     loader: &str,
     selected_version: &str,
+    allow_existing_loader: bool,
 ) -> Result<InstalledInstance, String> {
     let (instance_root, mut marker) = load_instance_marker(data_root, instance_id).await?;
-    if marker.loader.is_some() {
+    if marker.loader.is_some() && !allow_existing_loader {
         return Err("This instance already has a mod loader. Remove or recreate the profile before switching loaders.".to_owned());
     }
     let game_version = marker.game_version.clone().unwrap_or_else(|| marker.id.clone());
@@ -763,9 +764,7 @@ pub(crate) async fn repair_loader(
         .loader_version
         .clone()
         .ok_or_else(|| "The instance is missing its loader version".to_owned())?;
-    marker.launch_version = None;
-    write_marker(&data_root.join("instances").join(instance_id), &marker).await?;
-    install_loader_inner(data_root, cache_root, instance_id, &loader, &version).await
+    install_loader_inner(data_root, cache_root, instance_id, &loader, &version, true).await
 }
 
 #[tauri::command]
