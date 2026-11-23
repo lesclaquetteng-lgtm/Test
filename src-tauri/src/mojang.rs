@@ -488,7 +488,8 @@ fn native_classifier(library: &Library) -> Option<String> {
     } else {
         "32"
     };
-    Some(template.replace("$" + "{arch}", arch))
+    let placeholder = ["$", "{arch}"].concat();
+    Some(template.replace(placeholder.as_str(), arch))
 }
 
 fn artifact_spec(artifact: &Artifact, base: &Path) -> Result<DownloadSpec, MojangError> {
