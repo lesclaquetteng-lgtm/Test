@@ -4,6 +4,7 @@ use tauri::{Emitter, Manager};
 
 pub(crate) mod downloader;
 pub(crate) mod mojang;
+pub(crate) mod natives;
 pub(crate) mod performance;
 
 #[derive(Debug, Serialize)]
