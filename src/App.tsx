@@ -1036,7 +1036,7 @@ function DiagnosticsPage({
                 </div>
               ))}
             </div>
-            <p className="diagnostic-network-note">These checks send only a small HTTP request to public Minecraft endpoints. They do not transmit your diagnostic report, account details or authentication tokens.</p>
+            <p className="diagnostic-network-note">These checks send small requests to public Minecraft endpoints (which will see your public IP, as with any network request). They do not transmit the diagnostic report, account details or authentication tokens.</p>
           </section>
 
           <section className="panel diagnostic-section">
