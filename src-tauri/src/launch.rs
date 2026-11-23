@@ -597,7 +597,9 @@ fn build_launch_arguments(
                 || value.starts_with("-agentlib")
                 || value.starts_with("-agentpath")
             {
-                return Err(format!("This instance contains a reserved or unsafe JVM argument: {value}"));
+                return Err(format!(
+                    "This instance contains a reserved or unsafe JVM argument: {value}"
+                ));
             }
             jvm.push(value.to_owned());
         }
