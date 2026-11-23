@@ -779,7 +779,7 @@ pub(crate) async fn install_loader(
     }
     let data_root = app.path().app_data_dir().map_err(|error| error.to_string())?;
     let cache_root = app.path().app_cache_dir().map_err(|error| error.to_string())?;
-    install_loader_inner(&data_root, &cache_root, &instance_id, &loader, &version).await
+    install_loader_inner(&data_root, &cache_root, &instance_id, &loader, &version, false).await
 }
 
 #[tauri::command]
