@@ -365,7 +365,7 @@ pub(crate) async fn repair_instance(
     if !safe_id(&game_version) {
         return Err("This profile has an invalid base Minecraft version".to_owned());
     }
-    if marker.loader.is_some() && marker.loader.as_deref() != Some("fabric") {
+    if original.loader.as_deref().is_some_and(|loader| !matches!(loader, "fabric" | "forge" | "neoforge")) {
         return Err(
             "Repair for this loader is not available yet. The instance was left unchanged."
                 .to_owned(),
@@ -420,7 +420,22 @@ pub(crate) fn open_instance_folder(
         .app_data_dir()
         .map_err(|error| error.to_string())?;
     let root = instance_root(&data_root, &instance_id)?;
-    let marker = fs::read(root.join(".nova-install.json")).map_err(|error| error.to_string())?;
+    let instances_root = data_root.join("instances");
+    let canonical_instances = fs::canonicalize(&instances_root).map_err(|error| error.to_string())?;
+    let canonical_root = fs::canonicalize(&root).map_err(|error| error.to_string())?;
+    if !canonical_root.starts_with(&canonical_instances) || canonical_root == canonical_instances {
+        return Err("Instance folder resolves outside NOVA's managed directory".to_owned());
+    }
+    let directory_metadata = fs::symlink_metadata(&root).map_err(|error| error.to_string())?;
+    if !directory_metadata.is_dir() || directory_metadata.file_type().is_symlink() {
+        return Err("Instance folder is not a regular directory".to_owned());
+    }
+    let marker_path = root.join(".nova-install.json");
+    let marker_metadata = fs::symlink_metadata(&marker_path).map_err(|error| error.to_string())?;
+    if !marker_metadata.file_type().is_file() || marker_metadata.file_type().is_symlink() {
+        return Err("Instance marker is not a regular file".to_owned());
+    }
+    let marker = fs::read(marker_path).map_err(|error| error.to_string())?;
     let parsed: mojang::InstalledInstance =
         serde_json::from_slice(&marker).map_err(|error| error.to_string())?;
     if parsed.id != instance_id || parsed.instance_path != root.to_string_lossy().as_ref() {
