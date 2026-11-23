@@ -4,7 +4,7 @@
 
 NOVA is an independent desktop launcher project. Its goal is to combine a polished, fast experience with reliable Minecraft installation, isolated instances, mod-loader support, modpack management, account security and actionable diagnostics.
 
-> Project status: early development. The feature branch now includes the native desktop shell, Java diagnostics, performance telemetry, a verified concurrent downloader, the official Mojang version catalogue and an initial Vanilla installer. Game launching is not implemented yet.
+> Project status: early development. The feature branch now includes the native desktop shell, Java diagnostics, performance telemetry, a verified concurrent downloader, the official Mojang version catalogue, a verified Vanilla installer, shared asset/library storage and guarded extraction of platform-native libraries. Game launching is not implemented yet.
 
 ## Current stack
 
