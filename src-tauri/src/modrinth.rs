@@ -454,15 +454,34 @@ async fn read_instance_marker(
     Ok((root, marker))
 }
 
+async fn replace_file_safely(temporary: &Path, destination: &Path) -> Result<(), String> {
+    let backup = destination.with_extension("nova-backup");
+    if fs::try_exists(&backup).await.map_err(|error| error.to_string())? {
+        fs::remove_file(&backup).await.map_err(|error| error.to_string())?;
+    }
+    if fs::try_exists(destination).await.map_err(|error| error.to_string())? {
+        fs::rename(destination, &backup).await.map_err(|error| error.to_string())?;
+        if let Err(error) = fs::rename(temporary, destination).await {
+            let rollback = fs::rename(&backup, destination).await;
+            let _ = fs::remove_file(temporary).await;
+            if let Err(rollback_error) = rollback {
+                return Err(format!("Unable to publish updated metadata ({error}); rollback also failed ({rollback_error})"));
+            }
+            return Err(error.to_string());
+        }
+        let _ = fs::remove_file(backup).await;
+    } else {
+        fs::rename(temporary, destination).await.map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
 async fn write_instance_marker(root: &Path, marker: &InstalledInstance) -> Result<(), String> {
     let bytes = serde_json::to_vec_pretty(marker).map_err(|error| error.to_string())?;
     let temporary = root.join(".nova-install.json.new");
-    fs::write(&temporary, bytes)
-        .await
-        .map_err(|error| error.to_string())?;
-    fs::rename(&temporary, root.join(".nova-install.json"))
-        .await
-        .map_err(|error| error.to_string())
+    let destination = root.join(".nova-install.json");
+    fs::write(&temporary, bytes).await.map_err(|error| error.to_string())?;
+    replace_file_safely(&temporary, &destination).await
 }
 
 async fn write_instance_metadata(path: &Path, metadata: &Value) -> Result<(), String> {
@@ -471,7 +490,7 @@ async fn write_instance_metadata(path: &Path, metadata: &Value) -> Result<(), St
     fs::create_dir_all(parent).await.map_err(|error| error.to_string())?;
     let temporary = path.with_extension("json.new");
     fs::write(&temporary, bytes).await.map_err(|error| error.to_string())?;
-    fs::rename(&temporary, path).await.map_err(|error| error.to_string())
+    replace_file_safely(&temporary, path).await
 }
 
 fn merge_profile_arguments(base: &mut Value, profile: &Value) {
