@@ -89,10 +89,7 @@ fn is_excluded(path: &str, exclusions: &[String]) -> bool {
     })
 }
 
-fn extract_sync(
-    archives: &[(PathBuf, Vec<String>)],
-    stage: &Path,
-) -> Result<u64, NativeError> {
+fn extract_sync(archives: &[(PathBuf, Vec<String>)], stage: &Path) -> Result<u64, NativeError> {
     let mut extracted_bytes = 0_u64;
     let mut written_paths = HashSet::<String>::new();
     let mut total_entries = 0_usize;
