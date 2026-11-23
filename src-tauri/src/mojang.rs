@@ -4,7 +4,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Component, Path, PathBuf},
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -32,6 +32,8 @@ static METADATA_CLIENT: OnceLock<Result<Client, String>> = OnceLock::new();
 enum MojangError {
     #[error("Metadata URL must use HTTPS")]
     InvalidUrl,
+    #[error("Unable to initialize Mojang HTTP client: {0}")]
+    ClientInitialization(String),
     #[error("Mojang metadata request failed: {0}")]
     Request(#[from] reqwest::Error),
     #[error("Mojang metadata returned HTTP {0}")]
@@ -210,7 +212,7 @@ fn metadata_client() -> Result<&'static Client, MojangError> {
             .map_err(|error| error.to_string())
     }) {
         Ok(client) => Ok(client),
-        Err(_) => Err(MojangError::InvalidUrl),
+        Err(error) => Err(MojangError::ClientInitialization(error.clone())),
     }
 }
 
@@ -340,6 +342,22 @@ async fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), MojangError> {
     Ok(())
 }
 
+fn valid_manifest(manifest: &VersionManifest) -> bool {
+    if manifest.versions.is_empty()
+        || !safe_version_id(&manifest.latest.release)
+        || !safe_version_id(&manifest.latest.snapshot)
+    {
+        return false;
+    }
+    let mut seen = HashSet::with_capacity(manifest.versions.len());
+    manifest.versions.iter().all(|version| {
+        safe_version_id(&version.id)
+            && valid_sha1(&version.sha1)
+            && validate_https_url(&version.url).is_ok()
+            && seen.insert(version.id.as_str())
+    })
+}
+
 async fn cache_age(path: &Path) -> Option<Duration> {
     let metadata = fs::metadata(path).await.ok()?;
     let modified = metadata.modified().ok()?;
@@ -361,7 +379,7 @@ async fn fetch_manifest_inner(cache_root: &Path) -> Result<VersionManifest, Moja
             .is_some_and(|age| age < CACHE_FRESH_FOR)
         {
             if let Ok(manifest) = serde_json::from_slice::<VersionManifest>(bytes) {
-                if !manifest.versions.is_empty() {
+                if valid_manifest(&manifest) {
                     return Ok(manifest);
                 }
             }
@@ -371,12 +389,7 @@ async fn fetch_manifest_inner(cache_root: &Path) -> Result<VersionManifest, Moja
     match fetch_limited(VERSION_MANIFEST_URL, MAX_MANIFEST_BYTES).await {
         Ok(bytes) => {
             let manifest: VersionManifest = serde_json::from_slice(&bytes)?;
-            if manifest.versions.is_empty()
-                || !manifest
-                    .versions
-                    .iter()
-                    .all(|version| safe_version_id(&version.id) && valid_sha1(&version.sha1))
-            {
+            if !valid_manifest(&manifest) {
                 return Err(MojangError::InvalidManifest);
             }
             write_atomic(&path, &bytes).await?;
@@ -386,7 +399,7 @@ async fn fetch_manifest_inner(cache_root: &Path) -> Result<VersionManifest, Moja
             if let (Some(bytes), Some(age)) = (cached, cache_age(&path).await) {
                 if age <= CACHE_STALE_LIMIT {
                     if let Ok(manifest) = serde_json::from_slice::<VersionManifest>(&bytes) {
-                        if !manifest.versions.is_empty() {
+                        if valid_manifest(&manifest) {
                             return Ok(manifest);
                         }
                     }
