@@ -126,7 +126,6 @@ struct VersionDetails {
     libraries: Vec<Library>,
 }
 
-
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct VersionDownload {
