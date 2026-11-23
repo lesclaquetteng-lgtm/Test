@@ -25,6 +25,7 @@ import {
   Square,
   Terminal,
   RefreshCw,
+  ScanSearch,
   Search,
   Settings2,
   ShieldCheck,
@@ -36,7 +37,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-type Page = "overview" | "instances" | "modpacks" | "mods" | "downloads" | "performance" | "settings";
+type Page = "overview" | "instances" | "modpacks" | "mods" | "downloads" | "performance" | "diagnostics" | "settings";
 
 type RuntimeStatus = {
   platform: string;
@@ -99,13 +100,67 @@ type PerformanceSnapshot = {
   cacheHitRateBasisPoints: number;
 };
 
+type DiagnosticCheck = {
+  id: string;
+  category: string;
+  severity: string;
+  status: string;
+  title: string;
+  details: string;
+  evidence: string[];
+  recommendedAction: string | null;
+};
+type DiagnosticReport = {
+  schemaVersion: number;
+  reportId: string;
+  generatedAtUnix: number;
+  trigger: string;
+  mode: string;
+  summary: { overallStatus: string; checksTotal: number; passed: number; warnings: number; failures: number; information: number };
+  system: {
+    operatingSystem: string;
+    architecture: string;
+    osVersion: string | null;
+    osBuild: string | null;
+    cpuModel: string | null;
+    logicalProcessors: number;
+    totalMemoryBytes: number | null;
+    gpus: { name: string; driverVersion: string | null; adapterMemoryBytes: number | null }[];
+    hardwareQueryStatus: string;
+  };
+  instances: {
+    id: string;
+    versionType: string | null;
+    clientStatus: string;
+    clientExpectedSha1: string | null;
+    clientActualSha1: string | null;
+    javaRequiredMajor: number | null;
+    javaCandidates: { executable: string; version: string | null; majorVersion: number | null; compatible: boolean | null; source: string }[];
+    libraryCount: number;
+    missingLibraries: number;
+    invalidLibraries: number;
+    assetCount: number;
+    missingAssets: number;
+    invalidAssets: number;
+    nativeFileCount: number;
+    latestLogExcerpt: string[];
+    crashReportExcerpt: string[];
+    crashArtifactNames: string[];
+  }[];
+  checks: DiagnosticCheck[];
+  recentProcessLogs: { timestampUnix: number; stream: string; line: string }[];
+  reportPath: string;
+  privacy: string[];
+};
+
 const NAVIGATION: { id: Page; label: string; icon: LucideIcon }[] = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "instances", label: "Instances", icon: Layers3 },
   { id: "modpacks", label: "Modpacks", icon: Package },
   { id: "mods", label: "Mods", icon: Puzzle },
   { id: "downloads", label: "Downloads", icon: Download },
-  { id: "performance", label: "Performance", icon: Gauge }
+  { id: "performance", label: "Performance", icon: Gauge },
+  { id: "diagnostics", label: "Diagnostics", icon: ScanSearch }
 ];
 
 const PAGE_INFO: Record<Page, { eyebrow: string; title: string; description: string }> = {
@@ -138,6 +193,11 @@ const PAGE_INFO: Record<Page, { eyebrow: string; title: string; description: str
     eyebrow: "MEASURED, NOT GUESSED",
     title: "Performance",
     description: "Inspect native workload metrics and the optimization engine's measured activity."
+  },
+  diagnostics: {
+    eyebrow: "AUTOMATIC TROUBLESHOOTING",
+    title: "Diagnostics",
+    description: "Inspect hardware, Java, Minecraft files, integrity checks and crash evidence in a local, shareable report."
   },
   settings: {
     eyebrow: "PREFERENCES",
@@ -866,6 +926,187 @@ function PerformancePage({ snapshot, checking, isDesktop, onRefresh }: {
         </div>
         <p className="performance-disclaimer">This is native instrumentation, not an FPS benchmark. Download, cache and integrity counters become meaningful when those real engine services are connected.</p>
       </section>
+    </div>
+  );
+}
+
+
+function DiagnosticsPage({
+  report,
+  loading,
+  error,
+  isDesktop,
+  onRun,
+  onOpenFolder
+}: {
+  report: DiagnosticReport | null;
+  loading: boolean;
+  error: string | null;
+  isDesktop: boolean;
+  onRun: (deep: boolean) => void;
+  onOpenFolder: () => void;
+}) {
+  if (!isDesktop) {
+    return (
+      <EmptyPage
+        icon={ScanSearch}
+        eyebrow="LOCAL DIAGNOSTICS"
+        title="Open NOVA Desktop to inspect the system."
+        description="The diagnostic engine runs locally inside the desktop application. Browser preview cannot access Java, game files, hardware details or crash logs."
+        actionLabel="Back to overview"
+      />
+    );
+  }
+
+  const status = report?.summary.overallStatus ?? "unknown";
+  const statusLabel = status === "critical" ? "ISSUES FOUND" : status === "warning" ? "ATTENTION" : status === "healthy" ? "HEALTHY" : "WAITING FOR SCAN";
+  const gpus = report?.system.gpus ?? [];
+  const formatTime = (timestamp: number) => new Date(timestamp * 1000).toLocaleString();
+
+  return (
+    <div className="diagnostic-page">
+      <section className="panel diagnostic-hero">
+        <div className="diagnostic-hero-copy">
+          <span className="section-eyebrow">NOVA DIAGNOSTIC ENGINE · LOCAL ONLY</span>
+          <h2>{report ? "System health report" : "Know exactly what is wrong."}</h2>
+          <p>{report ? `Report ${report.reportId} · ${report.mode.toUpperCase()} scan · ${formatTime(report.generatedAtUnix)}` : "Run a quick check or a full integrity scan of every installed instance."}</p>
+        </div>
+        <span className={`diagnostic-status ${status}`}>{loading ? "SCANNING…" : statusLabel}</span>
+        <div className="diagnostic-actions">
+          <button className="instance-process-button" onClick={() => onRun(false)} disabled={loading}>
+            <RefreshCw size={14} className={loading ? "spin" : ""} /> Quick scan
+          </button>
+          <button className="instance-install-button" onClick={() => onRun(true)} disabled={loading}>
+            <ScanSearch size={14} /> Deep integrity scan
+          </button>
+          <button className="icon-button" onClick={onOpenFolder} disabled={loading} aria-label="Open diagnostic reports folder" title="Open saved reports folder">
+            <FolderOpen size={16} />
+          </button>
+        </div>
+        {error && <div className="instance-error" role="alert">{error}</div>}
+        <p className="diagnostic-mode-note">Quick scan: system inventory, Java detection, client SHA-1 and file presence. Deep scan: additionally hashes all indexed assets and applicable libraries. A deep scan can take longer on large installations.</p>
+      </section>
+
+      {report && (
+        <>
+          <section className="diagnostic-summary-grid">
+            <article className="diagnostic-stat"><span>CHECKS</span><strong>{report.summary.checksTotal}</strong><small>Total diagnostic checks</small></article>
+            <article className="diagnostic-stat passed"><span>PASSED</span><strong>{report.summary.passed}</strong><small>Checks with expected results</small></article>
+            <article className="diagnostic-stat warning"><span>WARNINGS</span><strong>{report.summary.warnings}</strong><small>Potential issues or unavailable data</small></article>
+            <article className="diagnostic-stat failed"><span>FAILURES</span><strong>{report.summary.failures}</strong><small>Problems requiring attention</small></article>
+          </section>
+
+          <section className="panel diagnostic-section">
+            <div className="panel-heading">
+              <div><span className="section-eyebrow">MACHINE PROFILE</span><h2>Hardware & operating system</h2></div>
+              <span className="value-tag">{report.system.architecture}</span>
+            </div>
+            <div className="diagnostic-hardware-grid">
+              <div><span>OPERATING SYSTEM</span><strong>{report.system.operatingSystem}</strong><small>{report.system.osVersion ?? "Version unavailable"}{report.system.osBuild ? " · Build " + report.system.osBuild : ""}</small></div>
+              <div><span>PROCESSOR</span><strong>{report.system.cpuModel ?? "Not exposed"}</strong><small>{report.system.logicalProcessors} logical processors</small></div>
+              <div><span>PHYSICAL MEMORY</span><strong>{report.system.totalMemoryBytes ? formatBytes(report.system.totalMemoryBytes) : "Not exposed"}</strong><small>Detected by the operating-system inventory</small></div>
+              <div><span>GPU DEVICES</span><strong>{gpus.length || "Not detected"}</strong><small>{report.system.hardwareQueryStatus}</small></div>
+            </div>
+            {gpus.length > 0 && (
+              <div className="diagnostic-gpu-list">
+                {gpus.map((gpu, index) => (
+                  <div className="diagnostic-gpu" key={gpu.name + index}>
+                    <Cpu size={15} />
+                    <div><strong>{gpu.name}</strong><small>Driver {gpu.driverVersion ?? "unknown"}{gpu.adapterMemoryBytes ? " · " + formatBytes(gpu.adapterMemoryBytes) : ""}</small></div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="panel diagnostic-section">
+            <div className="panel-heading">
+              <div><span className="section-eyebrow">INSTANCE INTEGRITY</span><h2>Minecraft installations</h2></div>
+              <span className="value-tag">{report.instances.length} SCANNED</span>
+            </div>
+            {report.instances.length === 0 ? (
+              <div className="instance-empty-state"><Layers3 size={20} /><span>No NOVA-managed Minecraft instances were found.</span></div>
+            ) : report.instances.map((instance) => (
+              <article className="diagnostic-instance" key={instance.id}>
+                <div className="diagnostic-instance-heading">
+                  <strong>{instance.id}</strong>
+                  <span className={instance.clientStatus === "verified" ? "diagnostic-pill passed" : "diagnostic-pill failed"}>{instance.clientStatus.replace("_", " ").toUpperCase()}</span>
+                </div>
+                <div className="diagnostic-instance-metrics">
+                  <span>Java required: <b>{instance.javaRequiredMajor ?? "Unknown"}</b></span>
+                  <span>Libraries: <b>{instance.libraryCount}</b> · Missing <b>{instance.missingLibraries}</b> · Invalid <b>{instance.invalidLibraries}</b></span>
+                  <span>Assets: <b>{instance.assetCount}</b> · Missing <b>{instance.missingAssets}</b> · Invalid <b>{instance.invalidAssets}</b></span>
+                  <span>Native files: <b>{instance.nativeFileCount}</b></span>
+                </div>
+                <div className="diagnostic-java-list">
+                  {instance.javaCandidates.map((java, index) => (
+                    <div key={java.executable + index}>
+                      <span className={java.compatible ? "java-dot good" : "java-dot"} />
+                      <span>{java.source}: {java.version ?? "unavailable"}</span>
+                      <small>{java.executable}</small>
+                    </div>
+                  ))}
+                  {instance.javaCandidates.length === 0 && <small>No Java candidates were detected.</small>}
+                </div>
+                <div className="diagnostic-instance-hashes">
+                  <span>Client SHA-1 expected: {instance.clientExpectedSha1 ?? "unavailable"}</span>
+                  <span>Client SHA-1 actual: {instance.clientActualSha1 ?? "unavailable"}</span>
+                </div>
+                {instance.crashArtifactNames.length > 0 && <p className="diagnostic-crash-files">Crash evidence: {instance.crashArtifactNames.join(", ")}</p>}
+                {instance.crashReportExcerpt.length > 0 && (
+                  <details className="diagnostic-log-details">
+                    <summary>Latest JVM / Minecraft crash excerpt ({instance.crashReportExcerpt.length} lines)</summary>
+                    <pre>{instance.crashReportExcerpt.join("\n")}</pre>
+                  </details>
+                )}
+                {instance.latestLogExcerpt.length > 0 && (
+                  <details className="diagnostic-log-details">
+                    <summary>latest.log excerpt ({instance.latestLogExcerpt.length} lines)</summary>
+                    <pre>{instance.latestLogExcerpt.join("\n")}</pre>
+                  </details>
+                )}
+              </article>
+            ))}
+          </section>
+
+          <section className="panel diagnostic-section">
+            <div className="panel-heading">
+              <div><span className="section-eyebrow">DETAILED RESULTS</span><h2>Checks & recommendations</h2></div>
+              <span className="value-tag">{report.checks.length} CHECKS</span>
+            </div>
+            <div className="diagnostic-check-list">
+              {report.checks.map((check) => (
+                <article className={`diagnostic-check ${check.status}`} key={check.id}>
+                  <div className="diagnostic-check-icon">
+                    {check.status === "passed" ? <CheckCircle2 size={16} /> : check.status === "failed" ? <ShieldCheck size={16} /> : <AlertCircle size={16} />}
+                  </div>
+                  <div className="diagnostic-check-copy">
+                    <div className="diagnostic-check-title"><strong>{check.title}</strong><span className={`diagnostic-pill ${check.status}`}>{check.status.toUpperCase()}</span><small>{check.category} · {check.severity}</small></div>
+                    <p>{check.details}</p>
+                    {check.evidence.length > 0 && <details><summary>Evidence ({check.evidence.length})</summary><pre>{check.evidence.join("\n")}</pre></details>}
+                    {check.recommendedAction && <div className="diagnostic-recommendation"><b>Recommended action:</b> {check.recommendedAction}</div>}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="panel diagnostic-section">
+            <div className="panel-heading">
+              <div><span className="section-eyebrow">PROCESS TRACE</span><h2>Recent Minecraft output</h2></div>
+              <span className="value-tag">{report.recentProcessLogs.length} LINES</span>
+            </div>
+            <pre className="diagnostic-process-log">{report.recentProcessLogs.length ? report.recentProcessLogs.map((line) => `[${line.stream}] ${line.line}`).join("\n") : "No process output has been captured in this NOVA session."}</pre>
+          </section>
+
+          <section className="panel diagnostic-privacy">
+            <div className="panel-heading"><div><span className="section-eyebrow">PRIVACY & REPORT STORAGE</span><h2>What this report contains</h2></div><ShieldCheck size={18} /></div>
+            <ul>{report.privacy.map((item) => <li key={item}>{item}</li>)}</ul>
+            <p>Saved locally at: <code>{report.reportPath}</code></p>
+            <button className="instance-process-button" onClick={onOpenFolder}><FolderOpen size={14} /> Open report folder</button>
+          </section>
+        </>
+      )}
     </div>
   );
 }
