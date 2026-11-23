@@ -1,0 +1,37 @@
+/* Vanilla instance manager */
+.instance-manager { display: flex; flex-direction: column; gap: 14px; }
+.instance-installer { padding: 19px; }
+.instance-installer-toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.instance-installer-toolbar p { margin: 6px 0 0; color: #879184; font-size: 9px; line-height: 1.7; }
+.instance-catalog-controls { display: grid; grid-template-columns: minmax(240px, 1fr) auto; gap: 10px; margin-top: 18px; }
+.instance-select { width: 100%; min-height: 39px; border: 1px solid rgba(210,230,209,.1); border-radius: 7px; padding: 0 11px; background: #0e130f; color: #dce6d7; font: 10px var(--mono); }
+.instance-select:focus { outline: 1px solid rgba(195,243,106,.55); }
+.instance-install-button { min-width: 154px; min-height: 39px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 14px; border: 1px solid rgba(195,243,106,.2); border-radius: 7px; background: var(--lime); color: #17200f; font-size: 10px; font-weight: 800; cursor: pointer; }
+.instance-install-button:hover:not(:disabled) { filter: brightness(1.06); }
+.instance-install-button:disabled { opacity: .48; cursor: not-allowed; }
+.instance-meta-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 13px; color: #82907c; font: 8px var(--mono); }
+.instance-meta-line span { padding: 5px 7px; border: 1px solid rgba(210,230,209,.07); border-radius: 4px; background: rgba(255,255,255,.015); }
+.instance-progress { margin-top: 16px; padding: 13px; border: 1px solid rgba(195,243,106,.12); border-radius: 7px; background: rgba(195,243,106,.035); }
+.instance-progress-head { display: flex; justify-content: space-between; gap: 12px; color: #cbd9c2; font-size: 9px; }
+.instance-progress-head strong { color: var(--lime); font: 9px var(--mono); }
+.instance-progress-track { height: 5px; margin-top: 10px; overflow: hidden; border-radius: 10px; background: #283128; }
+.instance-progress-fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg, #8eae5f, var(--lime)); transition: width .18s ease; }
+.instance-progress-detail { display: flex; justify-content: space-between; gap: 12px; margin-top: 8px; color: #82907c; font: 8px var(--mono); }
+.instance-error { margin-top: 13px; padding: 10px 12px; border: 1px solid rgba(225,143,111,.18); border-radius: 6px; background: rgba(225,143,111,.055); color: #e2a28a; font-size: 9px; line-height: 1.6; overflow-wrap: anywhere; }
+.instance-installed { padding: 19px; }
+.instance-installed-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.instance-card { min-width: 0; padding: 13px; border: 1px solid rgba(210,230,209,.075); border-radius: 8px; background: rgba(255,255,255,.015); }
+.instance-card-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.instance-card-top strong { color: #e2eadf; font: 12px var(--mono); }
+.instance-type { padding: 4px 6px; border: 1px solid rgba(195,243,106,.14); border-radius: 4px; color: #b6d88c; font: 7px var(--mono); text-transform: uppercase; }
+.instance-card-meta { display: flex; flex-wrap: wrap; gap: 7px 12px; margin-top: 11px; color: #808c7d; font: 8px var(--mono); }
+.instance-card-path { margin-top: 9px; color: #687568; font: 8px var(--mono); overflow-wrap: anywhere; }
+.instance-catalog-note { color: #6f7c6d; font-size: 8px; line-height: 1.6; }
+.instance-empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 108px; padding: 18px; text-align: center; color: #7f8a7e; font-size: 9px; }
+.instance-empty-state svg { margin-bottom: 9px; color: #9ab875; }
+@media (max-width: 780px) {
+  .instance-catalog-controls { grid-template-columns: 1fr; }
+  .instance-installed-grid { grid-template-columns: 1fr; }
+  .instance-installer-toolbar { flex-direction: column; }
+  .instance-progress-detail { flex-direction: column; }
+}
