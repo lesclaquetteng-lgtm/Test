@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import "./instances.css";
 import {
   Activity,
   ArrowRight,
@@ -39,6 +41,37 @@ type RuntimeStatus = {
   java_available: boolean;
   java_version: string | null;
   minecraft_directory: string | null;
+};
+
+
+type MinecraftVersion = {
+  id: string;
+  version_type: string;
+  versionType: string;
+  releaseTime: string;
+};
+type VersionCatalog = {
+  latest: { release: string; snapshot: string };
+  versions: MinecraftVersion[];
+};
+type InstalledInstance = {
+  id: string;
+  versionType: string;
+  installedAtUnix: number;
+  totalBytes: number;
+  files: number;
+  instancePath: string;
+  clientSha1: string;
+  assetIndex: string;
+};
+type InstallProgress = {
+  phase: string;
+  completedFiles: number;
+  totalFiles: number;
+  currentFile: string;
+  transferredBytes: number;
+  totalBytes: number | null;
+  attempt: number;
 };
 
 type PerformanceSnapshot = {
@@ -412,6 +445,199 @@ function Overview({
   );
 }
 
+
+function InstancesPage({ isDesktop }: { isDesktop: boolean }) {
+  const [catalog, setCatalog] = useState<VersionCatalog | null>(null);
+  const [instances, setInstances] = useState<InstalledInstance[]>([]);
+  const [selectedVersion, setSelectedVersion] = useState("");
+  const [includeSnapshots, setIncludeSnapshots] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [installing, setInstalling] = useState(false);
+  const [progress, setProgress] = useState<InstallProgress | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    if (!isDesktop) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const [nextCatalog, nextInstances] = await Promise.all([
+        invoke<VersionCatalog>("get_minecraft_versions"),
+        invoke<InstalledInstance[]>("list_installed_instances")
+      ]);
+      setCatalog(nextCatalog);
+      setInstances(nextInstances);
+      setSelectedVersion((current) => current || nextCatalog.latest.release);
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setLoading(false);
+    }
+  }, [isDesktop]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!isDesktop) return;
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    void listen<InstallProgress>("nova-install-progress", (event) => {
+      setProgress(event.payload);
+    }).then((stop) => {
+      if (disposed) stop();
+      else unlisten = stop;
+    }).catch((cause: unknown) => {
+      console.error("Unable to subscribe to installation progress:", cause);
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [isDesktop]);
+
+  const install = useCallback(async () => {
+    if (!selectedVersion || installing) return;
+    setInstalling(true);
+    setProgress(null);
+    setError(null);
+    try {
+      await invoke<InstalledInstance>("install_vanilla_version", {
+        versionId: selectedVersion
+      });
+      const nextInstances = await invoke<InstalledInstance[]>("list_installed_instances");
+      setInstances(nextInstances);
+      setProgress((current) => current ? { ...current, phase: "completed" } : current);
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setInstalling(false);
+    }
+  }, [installing, selectedVersion]);
+
+  const releases = catalog?.versions.filter((version) => version.versionType === "release").slice(0, 40) ?? [];
+  const snapshots = catalog?.versions.filter((version) => version.versionType === "snapshot").slice(0, 20) ?? [];
+  const selected = catalog?.versions.find((version) => version.id === selectedVersion);
+  const progressPercent = progress
+    ? progress.phase === "completed"
+      ? 100
+      : progress.totalFiles > 0
+        ? Math.min(99, Math.round((progress.completedFiles / progress.totalFiles) * 100))
+        : 0
+    : 0;
+
+  if (!isDesktop) {
+    return (
+      <EmptyPage
+        icon={Layers3}
+        eyebrow="NATIVE INSTANCE ENGINE"
+        title="Open NOVA Desktop to install Minecraft."
+        description="The browser preview cannot write game files. The desktop build connects to Mojang, verifies every artifact and stores shared assets outside each isolated instance."
+        actionLabel="Back to overview"
+      />
+    );
+  }
+
+  return (
+    <div className="instance-manager">
+      <section className="panel instance-installer">
+        <div className="instance-installer-toolbar">
+          <div>
+            <span className="section-eyebrow">OFFICIAL MOJANG CATALOGUE</span>
+            <h2>Install a Vanilla version</h2>
+            <p>Official release metadata, SHA-1 checked client files, shared libraries and a deduplicated asset store. Each version receives its own instance directory.</p>
+          </div>
+          <button className="icon-button" onClick={() => void refresh()} disabled={loading || installing} aria-label="Refresh Minecraft versions">
+            <RefreshCw size={16} className={loading ? "spin" : ""} />
+          </button>
+        </div>
+        <div className="instance-meta-line">
+          <span>Latest release · {catalog?.latest.release ?? "—"}</span>
+          <span>Latest snapshot · {catalog?.latest.snapshot ?? "—"}</span>
+          <span>{loading ? "SYNCING CATALOGUE" : catalog ? "MOJANG METADATA READY" : "CATALOGUE UNAVAILABLE"}</span>
+        </div>
+        <div className="instance-catalog-controls">
+          <select
+            className="instance-select"
+            value={selectedVersion}
+            onChange={(event) => setSelectedVersion(event.target.value)}
+            disabled={loading || installing || !catalog}
+            aria-label="Minecraft version"
+          >
+            <optgroup label="Official releases">
+              {releases.map((version) => <option key={version.id} value={version.id}>{version.id}</option>)}
+            </optgroup>
+            {includeSnapshots && (
+              <optgroup label="Snapshots">
+                {snapshots.map((version) => <option key={version.id} value={version.id}>{version.id}</option>)}
+              </optgroup>
+            )}
+          </select>
+          <button className="instance-install-button" onClick={() => void install()} disabled={loading || installing || !selectedVersion}>
+            {installing ? <RefreshCw size={15} className="spin" /> : <Download size={15} />}
+            {installing ? "Installing…" : "Install Vanilla"}
+          </button>
+        </div>
+        <div className="instance-meta-line">
+          <label><input type="checkbox" checked={includeSnapshots} onChange={(event) => setIncludeSnapshots(event.target.checked)} disabled={installing} /> Include snapshots in selector</label>
+          <span>{selected ? selected.versionType.toUpperCase() + " · " + new Date(selected.releaseTime).toLocaleDateString() : "Select a version"}</span>
+        </div>
+        {installing && progress && (
+          <div className="instance-progress">
+            <div className="instance-progress-head">
+              <span>{progress.phase.replace("-", " ").toUpperCase()}</span>
+              <strong>{progressPercent}%</strong>
+            </div>
+            <div className="instance-progress-track">
+              <div className="instance-progress-fill" style={{ width: progressPercent + "%" }} />
+            </div>
+            <div className="instance-progress-detail">
+              <span>{progress.completedFiles}/{progress.totalFiles} files · {formatBytes(progress.transferredBytes)} current file</span>
+              <span>{progress.currentFile}</span>
+            </div>
+          </div>
+        )}
+        {error && <div className="instance-error" role="alert">{error}</div>}
+        <p className="instance-catalog-note">NOVA stores reusable assets and libraries in a shared cache. An existing artifact is reused only after its size and SHA-1 have been verified.</p>
+      </section>
+
+      <section className="panel instance-installed">
+        <div className="panel-heading">
+          <div><span className="section-eyebrow">LOCAL GAME DATA</span><h2>Installed instances</h2></div>
+          <span className="value-tag success">{instances.length} INSTALLED</span>
+        </div>
+        {instances.length === 0 ? (
+          <div className="instance-empty-state">
+            <Layers3 size={22} />
+            <span>No verified instances yet. Choose a release above to create your first one.</span>
+          </div>
+        ) : (
+          <div className="instance-installed-grid">
+            {instances.map((instance) => (
+              <article className="instance-card" key={instance.id}>
+                <div className="instance-card-top">
+                  <strong>{instance.id}</strong>
+                  <span className="instance-type">{instance.versionType}</span>
+                </div>
+                <div className="instance-card-meta">
+                  <span>{formatBytes(instance.totalBytes)}</span>
+                  <span>{instance.files} verified files</span>
+                  <span>Assets {instance.assetIndex}</span>
+                </div>
+                <div className="instance-card-path">{instance.instancePath}</div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
 function EmptyPage({
   icon: Icon,
   title,
@@ -611,16 +837,7 @@ function App() {
             </div>
 
             {page === "overview" && <Overview runtime={runtime} checking={checking} onNavigate={setPage} />}
-            {page === "instances" && (
-              <EmptyPage
-                icon={Layers3}
-                eyebrow="INSTANCE MANAGER"
-                title="Your library starts here."
-                description="No instances are installed yet. The instance engine will create isolated game directories, manage versions and keep each setup independent."
-                actionLabel="Back to overview"
-                onAction={() => setPage("overview")}
-              />
-            )}
+            {page === "instances" && <InstancesPage isDesktop={isDesktop} />}
             {page === "modpacks" && (
               <EmptyPage
                 icon={Package}
