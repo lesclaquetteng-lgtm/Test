@@ -84,12 +84,21 @@ fn safe_modpack_instance_path(raw: &str) -> Result<PathBuf, String> {
         })
         .ok_or_else(|| format!("Unsafe Modrinth instance path: {raw}"))?;
 
-    if ["versions", "natives"].iter().any(|reserved| first.eq_ignore_ascii_case(reserved)) {
-        return Err(format!("Modrinth pack cannot overwrite NOVA's reserved directory: {raw}"));
-    }
-    if [".nova-install.json", ".nova-install.json.new", ".nova-install.json.nova-backup"]
+    if ["versions", "natives"]
         .iter()
-        .any(|reserved| path.to_string_lossy().eq_ignore_ascii_case(reserved))
+        .any(|reserved| first.eq_ignore_ascii_case(reserved))
+    {
+        return Err(format!(
+            "Modrinth pack cannot overwrite NOVA's reserved directory: {raw}"
+        ));
+    }
+    if [
+        ".nova-install.json",
+        ".nova-install.json.new",
+        ".nova-install.json.nova-backup",
+    ]
+    .iter()
+    .any(|reserved| path.to_string_lossy().eq_ignore_ascii_case(reserved))
     {
         return Err("Modrinth pack attempted to overwrite NOVA's instance marker".to_owned());
     }
@@ -1302,7 +1311,8 @@ fn extract_mrpack_overrides(
         let temporary = destination.with_extension("nova-tmp");
         let mut output = std::fs::File::create(&temporary).map_err(|error| error.to_string())?;
         let mut bounded_entry = entry.take(file_size.saturating_add(1));
-        let copied = std::io::copy(&mut bounded_entry, &mut output).map_err(|error| error.to_string())?;
+        let copied =
+            std::io::copy(&mut bounded_entry, &mut output).map_err(|error| error.to_string())?;
         if copied != file_size {
             let _ = std::fs::remove_file(&temporary);
             return Err("Modrinth override size changed during extraction".to_owned());
