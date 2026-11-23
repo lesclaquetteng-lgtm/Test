@@ -4,7 +4,7 @@ use sha1::{Digest, Sha1};
 use std::{
     collections::HashMap,
     fs::{self, File},
-    io::Read,
+    io::{Read, Seek},
     path::{Component, Path, PathBuf},
     process::Command,
     sync::{Mutex, OnceLock},
@@ -386,7 +386,7 @@ fn redact_text(input: &str) -> String {
     output
 }
 
-pub(crate) fn record_process_log(instance_id: &str, stream: &str, line: &str) {
+pub(crate) fn record_process_log(instance_id: &str, stream: &str, line: &str) -> String {
     let sanitized = redact_text(line);
     let sanitized = if sanitized.len() > 16 * 1024 {
         sanitized.chars().take(16 * 1024).collect::<String>()
@@ -398,13 +398,14 @@ pub(crate) fn record_process_log(instance_id: &str, stream: &str, line: &str) {
             timestamp_unix: unix_now(),
             instance_id: instance_id.to_owned(),
             stream: stream.to_owned(),
-            line: sanitized,
+            line: sanitized.clone(),
         });
         if entries.len() > MAX_PROCESS_LOGS {
             let excess = entries.len() - MAX_PROCESS_LOGS;
             entries.drain(0..excess);
         }
     }
+    sanitized
 }
 
 fn process_log_snapshot(instance_id: Option<&str>) -> Vec<DiagnosticLog> {
