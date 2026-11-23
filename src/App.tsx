@@ -1342,6 +1342,7 @@ function matchesModCategory(project: ModrinthProject, category: ModCategory): bo
     case "visuals":
       return includesAny(["visual", "cosmetic", "animation", "particle", "render", "texture", "shader"]);
   }
+  return false;
 }
 
 function ModrinthProjectIcon({ project, compact = false }: { project: ModrinthProject; compact?: boolean }) {
