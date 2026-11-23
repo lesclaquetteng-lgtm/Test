@@ -24,11 +24,14 @@ dependencies {
     modImplementation "net.fabricmc.fabric-api:fabric-api:" + project.fabric_api_version
 }
 
+def novaClientVersion = project.property("mod_version").toString()
+def targetMinecraftVersion = project.property("minecraft_version").toString()
+
 processResources {
-    inputs.property "version", project.version
-    inputs.property "minecraft_version", project.minecraft_version
+    inputs.property "version", novaClientVersion
+    inputs.property "minecraft_version", targetMinecraftVersion
     filesMatching("fabric.mod.json") {
-        expand(version: project.version, minecraft_version: project.minecraft_version)
+        expand(version: novaClientVersion, minecraft_version: targetMinecraftVersion)
     }
 }
 
