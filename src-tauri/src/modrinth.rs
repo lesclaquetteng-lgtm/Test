@@ -1365,6 +1365,8 @@ pub(crate) async fn install_modrinth_modpack(
         .map_err(|error| format!("Unable to resolve NOVA cache directory: {error}"))?;
 
     let pack_instance_id = format!("pack_{version_id}");
+    let pack_path = data_root.join("instances").join(&pack_instance_id);
+    let existed_before = fs::try_exists(&pack_path).await.map_err(|error| error.to_string())?;
     let result = install_modrinth_modpack_inner(
         &data_root,
         &cache_root,
@@ -1372,9 +1374,8 @@ pub(crate) async fn install_modrinth_modpack(
         &version_id,
         None,
     ).await;
-    if result.is_err() && safe_identifier(&pack_instance_id) {
-        let partial = data_root.join("instances").join(pack_instance_id);
-        let _ = fs::remove_dir_all(partial).await;
+    if result.is_err() && !existed_before && safe_identifier(&pack_instance_id) {
+        let _ = fs::remove_dir_all(pack_path).await;
     }
     result
 }
