@@ -395,9 +395,8 @@ fn trusted_fabric_repository(host: &str) -> bool {
 }
 
 fn validate_fabric_artifact_url(raw: &str, name: &str) -> Result<String, String> {
-    let url = Url::parse(raw).map_err(|error| {
-        format!("Fabric library {name} has an invalid Maven URL: {error}")
-    })?;
+    let url = Url::parse(raw)
+        .map_err(|error| format!("Fabric library {name} has an invalid Maven URL: {error}"))?;
     let host = url.host_str().unwrap_or_default();
     if url.scheme() != "https"
         || !trusted_fabric_repository(host)
@@ -464,7 +463,9 @@ fn fabric_artifact(library: &Value) -> Result<FabricArtifact, String> {
                 if valid_sha1(value) {
                     Ok(value.to_ascii_lowercase())
                 } else {
-                    Err(format!("Fabric library {name} has an invalid SHA-1 checksum"))
+                    Err(format!(
+                        "Fabric library {name} has an invalid SHA-1 checksum"
+                    ))
                 }
             })
             .transpose()?;
@@ -490,7 +491,9 @@ fn fabric_artifact(library: &Value) -> Result<FabricArtifact, String> {
             if valid_sha1(value) {
                 Ok(value.to_ascii_lowercase())
             } else {
-                Err(format!("Fabric library {name} has an invalid SHA-1 checksum"))
+                Err(format!(
+                    "Fabric library {name} has an invalid SHA-1 checksum"
+                ))
             }
         })
         .transpose()?;
@@ -539,12 +542,18 @@ async fn resolve_fabric_artifact_sha1(artifact: &FabricArtifact) -> Result<Strin
             artifact.name
         )
     })?;
-    let checksum_text = String::from_utf8(bytes)
-        .map_err(|_| format!("Fabric library {} returned a non-text SHA-1 checksum", artifact.name))?;
-    let value = checksum_text
-        .split_whitespace()
-        .next()
-        .ok_or_else(|| format!("Fabric library {} returned an empty SHA-1 checksum", artifact.name))?;
+    let checksum_text = String::from_utf8(bytes).map_err(|_| {
+        format!(
+            "Fabric library {} returned a non-text SHA-1 checksum",
+            artifact.name
+        )
+    })?;
+    let value = checksum_text.split_whitespace().next().ok_or_else(|| {
+        format!(
+            "Fabric library {} returned an empty SHA-1 checksum",
+            artifact.name
+        )
+    })?;
     if !valid_sha1(value) {
         return Err(format!(
             "Fabric library {} returned an invalid Maven SHA-1 checksum",
@@ -1376,7 +1385,9 @@ fn extract_mrpack_overrides(
             return Err("Modrinth override size changed during extraction".to_owned());
         }
         match std::fs::symlink_metadata(&destination) {
-            Ok(metadata) if metadata.file_type().is_file() && !metadata.file_type().is_symlink() => {
+            Ok(metadata)
+                if metadata.file_type().is_file() && !metadata.file_type().is_symlink() =>
+            {
                 std::fs::remove_file(&destination).map_err(|error| error.to_string())?;
             }
             Ok(_) => {
@@ -1657,9 +1668,10 @@ async fn install_modrinth_modpack_inner(
     }
 
     let total_pack_files = index.files.len();
-    let total_pack_bytes = index.files.iter().fold(0_u64, |total, entry| {
-        total.saturating_add(entry.file_size)
-    });
+    let total_pack_bytes = index
+        .files
+        .iter()
+        .fold(0_u64, |total, entry| total.saturating_add(entry.file_size));
     const MAX_TOTAL_PACK_BYTES: u64 = 16 * 1024 * 1024 * 1024;
     if total_pack_bytes > MAX_TOTAL_PACK_BYTES {
         return Err("Modrinth pack exceeds NOVA's 16 GiB unpacked file limit".to_owned());
