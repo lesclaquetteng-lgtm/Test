@@ -35,3 +35,24 @@
   .instance-installer-toolbar { flex-direction: column; }
   .instance-progress-detail { flex-direction: column; }
 }
+
+/* Native Minecraft process controls */
+.instance-card-actions { display: flex; align-items: center; gap: 10px; margin-top: 13px; }
+.instance-process-button { min-height: 30px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 10px; border: 1px solid rgba(195,243,106,.22); border-radius: 5px; background: rgba(195,243,106,.09); color: #c9ed9a; font: 8px var(--mono); font-weight: 700; cursor: pointer; }
+.instance-process-button:hover:not(:disabled) { background: rgba(195,243,106,.16); }
+.instance-process-button.stop { border-color: rgba(225,143,111,.2); background: rgba(225,143,111,.07); color: #e2a28a; }
+.instance-process-button:disabled { opacity: .42; cursor: not-allowed; }
+.instance-running-pid { color: #91a18b; font: 8px var(--mono); }
+.launch-console { padding: 19px; }
+.launch-config-grid { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(180px, .65fr); gap: 12px; margin-top: 17px; }
+.launch-config-field { display: flex; flex-direction: column; gap: 7px; color: #8b9987; font: 8px var(--mono); text-transform: uppercase; letter-spacing: .06em; }
+.launch-config-field input, .launch-config-field select { width: 100%; min-height: 37px; border: 1px solid rgba(210,230,209,.1); border-radius: 6px; padding: 0 10px; background: #0e130f; color: #dce6d7; font: 10px var(--mono); text-transform: none; letter-spacing: normal; }
+.launch-config-field input:focus, .launch-config-field select:focus { outline: 1px solid rgba(195,243,106,.55); }
+.launch-config-field input:disabled, .launch-config-field select:disabled { opacity: .55; }
+.launch-offline-note { margin: 11px 0 16px; color: #7f8c79; font-size: 8px; line-height: 1.65; }
+.launch-log-heading { display: flex; align-items: center; gap: 8px; color: #b6d88c; font: 8px var(--mono); letter-spacing: .07em; }
+.launch-log-heading small { margin-left: auto; color: #687568; font-size: 8px; letter-spacing: 0; }
+.launch-log-output { max-height: 260px; min-height: 90px; margin: 10px 0 0; overflow: auto; padding: 12px; border: 1px solid rgba(210,230,209,.07); border-radius: 6px; background: #090d0a; color: #a9b6a1; font: 8px/1.65 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 780px) {
+  .launch-config-grid { grid-template-columns: 1fr; }
+}
