@@ -19,8 +19,11 @@ import {
   LayoutDashboard,
   Monitor,
   Package,
+  Play,
   Plus,
   Puzzle,
+  Square,
+  Terminal,
   RefreshCw,
   Search,
   Settings2,
@@ -72,6 +75,15 @@ type InstallProgress = {
   totalBytes: number | null;
   attempt: number;
 };
+
+type LaunchSession = {
+  instanceId: string;
+  pid: number;
+  startedAtUnix: number;
+  state: string;
+};
+type ProcessLog = { instanceId: string; stream: string; line: string };
+type ProcessState = { instanceId: string; state: string; pid: number | null; exitCode: number | null; message: string | null };
 
 type PerformanceSnapshot = {
   uptimeMs: number;
@@ -454,6 +466,13 @@ function InstancesPage({ isDesktop }: { isDesktop: boolean }) {
   const [installing, setInstalling] = useState(false);
   const [progress, setProgress] = useState<InstallProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [playerName, setPlayerName] = useState("NOVAPlayer");
+  const [memoryMb, setMemoryMb] = useState(4096);
+  const [launchSession, setLaunchSession] = useState<LaunchSession | null>(null);
+  const [launching, setLaunching] = useState(false);
+  const [launchError, setLaunchError] = useState<string | null>(null);
+  const [launchStatus, setLaunchStatus] = useState("No game process");
+  const [logs, setLogs] = useState<string[]>([]);
 
   const refresh = useCallback(async () => {
     if (!isDesktop) {
@@ -463,12 +482,14 @@ function InstancesPage({ isDesktop }: { isDesktop: boolean }) {
     setLoading(true);
     setError(null);
     try {
-      const [nextCatalog, nextInstances] = await Promise.all([
+      const [nextCatalog, nextInstances, nextSessions] = await Promise.all([
         invoke<VersionCatalog>("get_minecraft_versions"),
-        invoke<InstalledInstance[]>("list_installed_instances")
+        invoke<InstalledInstance[]>("list_installed_instances"),
+        invoke<LaunchSession[]>("list_launch_sessions")
       ]);
       setCatalog(nextCatalog);
       setInstances(nextInstances);
+      setLaunchSession(nextSessions[0] ?? null);
       setSelectedVersion((current) => current || nextCatalog.latest.release);
     } catch (cause) {
       setError(String(cause));
@@ -517,6 +538,66 @@ function InstancesPage({ isDesktop }: { isDesktop: boolean }) {
       setInstalling(false);
     }
   }, [installing, selectedVersion]);
+
+  useEffect(() => {
+    if (!isDesktop) return;
+    let disposed = false;
+    let stopLogs: (() => void) | undefined;
+    let stopState: (() => void) | undefined;
+    void listen<ProcessLog>("nova-process-log", (event) => {
+      const payload = event.payload;
+      setLogs((current) => [...current, `[${payload.stream}] ${payload.line}`].slice(-180));
+    }).then((stop) => {
+      if (disposed) stop();
+      else stopLogs = stop;
+    }).catch((cause: unknown) => console.error("Unable to subscribe to Minecraft logs:", cause));
+    void listen<ProcessState>("nova-process-state", (event) => {
+      const payload = event.payload;
+      setLaunchStatus(payload.message || payload.state);
+      if (payload.state === "running") {
+        setLaunchSession({ instanceId: payload.instanceId, pid: payload.pid ?? 0, startedAtUnix: Math.floor(Date.now() / 1000), state: "running" });
+        setLaunching(false);
+      } else {
+        setLaunchSession(null);
+        setLaunching(false);
+        if (payload.state === "failed") setLaunchError(payload.message || "Minecraft process failed");
+      }
+    }).then((stop) => {
+      if (disposed) stop();
+      else stopState = stop;
+    }).catch((cause: unknown) => console.error("Unable to subscribe to Minecraft process state:", cause));
+    return () => {
+      disposed = true;
+      stopLogs?.();
+      stopState?.();
+    };
+  }, [isDesktop]);
+
+  const launch = useCallback(async (instanceId: string) => {
+    if (launching || launchSession) return;
+    setLaunching(true);
+    setLaunchError(null);
+    setLaunchStatus("Preparing Minecraft process…");
+    setLogs([]);
+    try {
+      const session = await invoke<LaunchSession>("launch_minecraft", { instanceId, playerName, memoryMb });
+      setLaunchSession(session);
+      setLaunchStatus(`Minecraft running · PID ${session.pid}`);
+    } catch (cause) {
+      setLaunchError(String(cause));
+      setLaunchStatus("Launch failed");
+      setLaunching(false);
+    }
+  }, [launching, launchSession, playerName, memoryMb]);
+
+  const stop = useCallback(async (instanceId: string) => {
+    try {
+      await invoke("stop_minecraft", { instanceId });
+      setLaunchStatus("Stopping Minecraft…");
+    } catch (cause) {
+      setLaunchError(String(cause));
+    }
+  }, []);
 
   const releases = catalog?.versions.filter((version) => version.versionType === "release").slice(0, 40) ?? [];
   const snapshots = catalog?.versions.filter((version) => version.versionType === "snapshot").slice(0, 20) ?? [];
@@ -628,10 +709,46 @@ function InstancesPage({ isDesktop }: { isDesktop: boolean }) {
                   <span>Assets {instance.assetIndex}</span>
                 </div>
                 <div className="instance-card-path">{instance.instancePath}</div>
+                <div className="instance-card-actions">
+                  {launchSession?.instanceId === instance.id ? (
+                    <button className="instance-process-button stop" onClick={() => void stop(instance.id)}>
+                      <Square size={13} fill="currentColor" /> Stop game
+                    </button>
+                  ) : (
+                    <button className="instance-process-button" onClick={() => void launch(instance.id)} disabled={launching || Boolean(launchSession) || installing}>
+                      {launching ? <RefreshCw size={13} className="spin" /> : <Play size={13} fill="currentColor" />}
+                      {launching ? "Starting…" : "Launch"}
+                    </button>
+                  )}
+                  {launchSession?.instanceId === instance.id && <span className="instance-running-pid">PID {launchSession.pid}</span>}
+                </div>
               </article>
             ))}
           </div>
         )}
+      </section>
+
+      <section className="panel launch-console">
+        <div className="panel-heading">
+          <div><span className="section-eyebrow">NATIVE PROCESS CONTROL</span><h2>Launch configuration</h2></div>
+          <span className={launchSession ? "value-tag success" : "value-tag"}>{launchSession ? "RUNNING" : launchStatus.toUpperCase()}</span>
+        </div>
+        <div className="launch-config-grid">
+          <label className="launch-config-field">
+            <span>Offline player name</span>
+            <input value={playerName} onChange={(event) => setPlayerName(event.target.value)} maxLength={16} spellCheck={false} disabled={launching || Boolean(launchSession)} />
+          </label>
+          <label className="launch-config-field">
+            <span>Memory allocation</span>
+            <select value={memoryMb} onChange={(event) => setMemoryMb(Number(event.target.value))} disabled={launching || Boolean(launchSession)}>
+              {[2048, 3072, 4096, 6144, 8192, 12288, 16384].map((value) => <option key={value} value={value}>{formatBytes(value * 1024 * 1024)} RAM</option>)}
+            </select>
+          </label>
+        </div>
+        <p className="launch-offline-note">Offline profile · no Microsoft sign-in yet. Offline-mode servers only; authenticated multiplayer requires Microsoft account support.</p>
+        {launchError && <div className="instance-error" role="alert">{launchError}</div>}
+        <div className="launch-log-heading"><Terminal size={14} /><span>LIVE GAME OUTPUT</span><small>{logs.length} lines captured</small></div>
+        <pre className="launch-log-output" aria-live="polite">{logs.length ? logs.join("\n") : "Minecraft stdout/stderr will appear here after launch."}</pre>
       </section>
     </div>
   );
