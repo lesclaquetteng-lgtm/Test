@@ -25,7 +25,13 @@ import {
   TerminalSquare,
   UserRound,
   Trash2,
-  ExternalLink
+  ExternalLink,
+  Copy,
+  Pencil,
+  Wrench,
+  Save,
+  X,
+  Check
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -66,6 +72,8 @@ type InstalledInstance = {
   displayName?: string | null;
   modrinthProjectId?: string | null;
   modrinthVersionId?: string | null;
+  memoryMb?: number | null;
+  jvmArguments?: string[] | null;
 };
 type ModrinthProject = {
   project_id: string;
@@ -976,31 +984,19 @@ function InstancesPage({ isDesktop, playerName, setPlayerName, memoryMb, setMemo
         ) : (
           <div className="instance-installed-grid">
             {instances.map((instance) => (
-              <article className="instance-card" key={instance.id}>
-                <div className="instance-card-top">
-                  <strong>{instance.displayName || instance.id}</strong>
-                  <span className="instance-type">{instance.loader ? instance.loader + " " + (instance.loaderVersion || "") : instance.versionType}</span>
-                </div>
-                <div className="instance-card-meta">
-                  <span>{formatBytes(instance.totalBytes)}</span>
-                  <span>{instance.files} verified files</span>
-                  <span>Assets {instance.assetIndex}</span>
-                </div>
-                <div className="instance-card-path">{instance.instancePath}</div>
-                <div className="instance-card-actions">
-                  {launchSession?.instanceId === instance.id ? (
-                    <button className="instance-process-button stop" onClick={() => void stop(instance.id)}>
-                      <Square size={13} fill="currentColor" /> Stop game
-                    </button>
-                  ) : (
-                    <button className="instance-process-button" onClick={() => void launch(instance.id)} disabled={launching || Boolean(launchSession) || installing}>
-                      {launching ? <RefreshCw size={13} className="spin" /> : <Play size={13} fill="currentColor" />}
-                      {launching ? "Starting…" : "Launch"}
-                    </button>
-                  )}
-                  {launchSession?.instanceId === instance.id && <span className="instance-running-pid">PID {launchSession.pid}</span>}
-                </div>
-              </article>
+              <InstanceManagementCard
+                key={instance.id}
+                instance={instance}
+                running={launchSession?.instanceId === instance.id}
+                launching={launching}
+                disabled={installing || Boolean(launchSession && launchSession.instanceId !== instance.id)}
+                onLaunch={() => void launch(instance.id)}
+                onStop={() => void stop(instance.id)}
+                onRefresh={async () => {
+                  const nextInstances = await invoke<InstalledInstance[]>("list_installed_instances");
+                  setInstances(nextInstances);
+                }}
+              />
             ))}
           </div>
         )}
@@ -1029,6 +1025,220 @@ function InstancesPage({ isDesktop, playerName, setPlayerName, memoryMb, setMemo
         <pre className="launch-log-output" aria-live="polite">{logs.length ? logs.join("\n") : "Minecraft stdout/stderr will appear here after launch."}</pre>
       </section>
     </div>
+  );
+}
+
+
+
+function InstanceManagementCard({
+  instance,
+  running,
+  launching,
+  disabled,
+  onLaunch,
+  onStop,
+  onRefresh
+}: {
+  instance: InstalledInstance;
+  running: boolean;
+  launching: boolean;
+  disabled: boolean;
+  onLaunch: () => void;
+  onStop: () => void;
+  onRefresh: () => Promise<void>;
+}) {
+  type Action = "rename" | "duplicate" | "settings" | "delete" | null;
+  const [action, setAction] = useState<Action>(null);
+  const [displayName, setDisplayName] = useState(instance.displayName || instance.id);
+  const [memoryMb, setMemoryMb] = useState(String(instance.memoryMb ?? 0));
+  const [jvmArguments, setJvmArguments] = useState((instance.jvmArguments ?? []).join("\n"));
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    setDisplayName(instance.displayName || instance.id);
+    setMemoryMb(String(instance.memoryMb ?? 0));
+    setJvmArguments((instance.jvmArguments ?? []).join("\n"));
+  }, [instance.displayName, instance.memoryMb, instance.jvmArguments, instance.id]);
+
+  const perform = async (name: string, task: () => Promise<unknown>) => {
+    setBusy(name);
+    setError("");
+    setNotice("");
+    try {
+      await task();
+      setAction(null);
+      setNotice(name + " completed.");
+      await onRefresh();
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const rename = () => perform("Rename", () =>
+    invoke("rename_instance", { instanceId: instance.id, displayName })
+  );
+
+  const duplicate = () => {
+    const newId = "copy_" + Date.now().toString(36) + "_" + instance.id.slice(-42);
+    return perform("Duplicate", () =>
+      invoke("duplicate_instance", {
+        instanceId: instance.id,
+        newInstanceId: newId,
+        displayName
+      })
+    );
+  };
+
+  const saveSettings = () => {
+    const memory = Number(memoryMb);
+    const args = jvmArguments.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+    return perform("Save settings", () =>
+      invoke("update_instance_settings", {
+        instanceId: instance.id,
+        memoryMb: memory === 0 ? null : memory,
+        jvmArguments: args
+      })
+    );
+  };
+
+  const repair = () => perform("Repair", () =>
+    invoke("repair_instance", { instanceId: instance.id })
+  );
+
+  const remove = () => perform("Delete", () =>
+    invoke("delete_instance", { instanceId: instance.id })
+  );
+
+  const openFolder = () => perform("Open folder", () =>
+    invoke("open_instance_folder", { instanceId: instance.id })
+  );
+
+  const selectAction = (next: Action) => {
+    setError("");
+    setNotice("");
+    setAction((current) => current === next ? null : next);
+    if (next === "rename" || next === "duplicate") {
+      setDisplayName(next === "duplicate" ? "Copy of " + (instance.displayName || instance.id) : instance.displayName || instance.id);
+    }
+    if (next === "settings") {
+      setMemoryMb(String(instance.memoryMb ?? 0));
+      setJvmArguments((instance.jvmArguments ?? []).join("\n"));
+    }
+  };
+
+  return (
+    <article className="instance-card" key={instance.id}>
+      <div className="instance-card-top">
+        <div className="instance-card-title">
+          <strong>{instance.displayName || instance.id}</strong>
+          {instance.id !== (instance.displayName || instance.id) && <small>{instance.id}</small>}
+        </div>
+        <span className="instance-type">
+          {instance.loader
+            ? instance.loader + " " + (instance.loaderVersion || "")
+            : instance.versionType}
+        </span>
+      </div>
+      <div className="instance-card-meta">
+        <span>{formatBytes(instance.totalBytes)}</span>
+        <span>{instance.files} tracked files</span>
+        <span>Minecraft {instance.gameVersion || instance.id}</span>
+      </div>
+      <div className="instance-card-path">{instance.instancePath}</div>
+      <div className="instance-card-actions">
+        {running ? (
+          <button className="instance-process-button stop" onClick={onStop} disabled={busy !== ""}>
+            <Square size={13} fill="currentColor" /> Stop game
+          </button>
+        ) : (
+          <button className="instance-process-button" onClick={onLaunch} disabled={launching || disabled || busy !== ""}>
+            {launching ? <RefreshCw size={13} className="spin" /> : <Play size={13} fill="currentColor" />}
+            {launching ? "Starting…" : "Launch"}
+          </button>
+        )}
+        {running && <span className="instance-running-pid">RUNNING</span>}
+        <button className="instance-card-icon-action" type="button" onClick={() => void openFolder()} disabled={busy !== ""} title="Open instance folder" aria-label="Open instance folder">
+          <FolderOpen size={14} />
+        </button>
+        <button className="instance-card-icon-action" type="button" onClick={() => selectAction("settings")} disabled={busy !== ""} title="Instance settings" aria-label="Instance settings">
+          <Settings2 size={14} />
+        </button>
+        <button className="instance-card-icon-action" type="button" onClick={() => selectAction("rename")} disabled={busy !== ""} title="Rename instance" aria-label="Rename instance">
+          <Pencil size={14} />
+        </button>
+        <button className="instance-card-icon-action" type="button" onClick={() => selectAction("duplicate")} disabled={busy !== ""} title="Duplicate instance" aria-label="Duplicate instance">
+          <Copy size={14} />
+        </button>
+        <button className="instance-card-icon-action" type="button" onClick={() => void repair()} disabled={busy !== "" || running || disabled} title="Repair instance" aria-label="Repair instance">
+          {busy === "Repair" ? <RefreshCw size={14} className="spin" /> : <Wrench size={14} />}
+        </button>
+        <button className="instance-card-icon-action danger" type="button" onClick={() => selectAction("delete")} disabled={busy !== "" || running || disabled} title="Delete instance" aria-label="Delete instance">
+          <Trash2 size={14} />
+        </button>
+      </div>
+
+      {action && (
+        <div className="instance-manage-panel">
+          {action === "rename" && (
+            <>
+              <div className="instance-manage-heading"><strong>Rename profile</strong><button type="button" onClick={() => setAction(null)} aria-label="Close"><X size={14} /></button></div>
+              <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={48} placeholder="Instance name" />
+              <div className="instance-manage-actions">
+                <button type="button" onClick={() => void rename()} disabled={busy !== "" || !displayName.trim()}><Save size={13} /> Save name</button>
+                <button type="button" className="subtle" onClick={() => setAction(null)}>Cancel</button>
+              </div>
+            </>
+          )}
+          {action === "duplicate" && (
+            <>
+              <div className="instance-manage-heading"><strong>Duplicate instance</strong><button type="button" onClick={() => setAction(null)} aria-label="Close"><X size={14} /></button></div>
+              <p>A complete copy is created with its own saves, mods, configs and settings.</p>
+              <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={48} placeholder="Name for the new copy" />
+              <div className="instance-manage-actions">
+                <button type="button" onClick={() => void duplicate()} disabled={busy !== "" || !displayName.trim()}><Copy size={13} /> Create copy</button>
+                <button type="button" className="subtle" onClick={() => setAction(null)}>Cancel</button>
+              </div>
+            </>
+          )}
+          {action === "settings" && (
+            <>
+              <div className="instance-manage-heading"><strong>Per-instance launch settings</strong><button type="button" onClick={() => setAction(null)} aria-label="Close"><X size={14} /></button></div>
+              <label><span>Memory allocation</span>
+                <select value={memoryMb} onChange={(event) => setMemoryMb(event.target.value)}>
+                  <option value="0">Use launcher default ({formatBytes(4096 * 1024 * 1024)})</option>
+                  {[2048, 3072, 4096, 6144, 8192, 12288, 16384, 24576, 32768].map((value) => <option value={value} key={value}>{formatBytes(value * 1024 * 1024)} RAM</option>)}
+                </select>
+              </label>
+              <label><span>Custom JVM arguments · one per line</span>
+                <textarea rows={3} value={jvmArguments} onChange={(event) => setJvmArguments(event.target.value)} placeholder={"-XX:+UseG1GC\n-XX:+UnlockExperimentalVMOptions"} />
+              </label>
+              <p>Reserved launch arguments and Java agents are blocked. Settings apply the next time this instance is launched.</p>
+              <div className="instance-manage-actions">
+                <button type="button" onClick={() => void saveSettings()} disabled={busy !== ""}><Save size={13} /> Save settings</button>
+                <button type="button" className="subtle" onClick={() => setAction(null)}>Cancel</button>
+              </div>
+            </>
+          )}
+          {action === "delete" && (
+            <>
+              <div className="instance-manage-heading"><strong>Delete this instance?</strong><button type="button" onClick={() => setAction(null)} aria-label="Close"><X size={14} /></button></div>
+              <p className="warning">This permanently deletes this profile folder, including worlds, mods, configs and screenshots. Shared NOVA libraries and assets are kept.</p>
+              <div className="instance-manage-actions">
+                <button type="button" className="danger" onClick={() => void remove()} disabled={busy !== ""}><Trash2 size={13} /> Delete permanently</button>
+                <button type="button" className="subtle" onClick={() => setAction(null)}>Keep instance</button>
+              </div>
+            </>
+          )}
+          {error && <div className="instance-error" role="alert">{error}</div>}
+        </div>
+      )}
+      {busy && <div className="instance-action-progress"><RefreshCw size={12} className="spin" /> {busy} in progress…</div>}
+      {notice && !action && <div className="instance-action-notice"><Check size={12} /> {notice}</div>}
+    </article>
   );
 }
 
