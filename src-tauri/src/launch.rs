@@ -477,7 +477,6 @@ fn merge_loader_metadata(base: &Value, loader: &Value, profile_id: &str) -> Resu
 
 fn build_launch_arguments(
     metadata: &Value,
-    instance_id: &str,
     launch_profile_id: &str,
     username: &str,
     memory_mb: u32,
@@ -833,7 +832,6 @@ pub(crate) async fn launch_instance(
     let (java_path, java_major) = discover_java(required_java)?;
     let arguments = build_launch_arguments(
         &metadata,
-        &instance_id,
         launch_profile_id,
         &player_name,
         memory_mb,
