@@ -913,7 +913,7 @@ async fn collect_required_versions(
                             .game_versions
                             .iter()
                             .any(|value| value == game_version)
-                            && candidate.loaders.iter().any(|value| value == "fabric")
+                            && candidate.loaders.iter().any(|value| value == loader)
                     })
             } else {
                 None
