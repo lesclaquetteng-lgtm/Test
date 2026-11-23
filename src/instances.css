@@ -135,3 +135,18 @@
   .diagnostic-java-list > div { grid-template-columns: 7px minmax(0, 1fr); }
   .diagnostic-java-list small { grid-column: 2; }
 }
+
+.diagnostic-network-list { display: flex; flex-direction: column; margin-top: 8px; }
+.diagnostic-network-row { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid rgba(210,230,209,.06); }
+.network-state { width: 7px; height: 7px; border-radius: 50%; background: #d28d75; }
+.network-state.good { background: #b9de86; box-shadow: 0 0 8px rgba(185,222,134,.28); }
+.network-state.bad { background: #d28d75; }
+.diagnostic-network-row strong, .diagnostic-network-row small { display: block; }
+.diagnostic-network-row strong { color: #dce6d7; font-size: 9px; }
+.diagnostic-network-row > div > small { margin-top: 4px; color: #687568; font: 8px var(--mono); }
+.diagnostic-network-row > small { color: #8b9884; font: 8px var(--mono); }
+.diagnostic-network-note { margin: 10px 0 0; color: #6f7c6d; font-size: 8px; line-height: 1.6; }
+@media (max-width: 780px) {
+  .diagnostic-network-row { grid-template-columns: 8px minmax(0, 1fr) auto; }
+  .diagnostic-network-row > small { display: none; }
+}
