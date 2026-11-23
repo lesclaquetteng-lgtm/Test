@@ -14,6 +14,7 @@ use std::{
     time::Duration,
 };
 use tokio::{fs, sync::mpsc};
+use tauri::Manager;
 use url::Url;
 
 const MODRINTH_API: &str = "https://api.modrinth.com/v2";
@@ -118,7 +119,6 @@ async fn get_json<T: for<'de> Deserialize<'de>>(url: &str, limit: usize) -> Resu
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub(crate) struct ModrinthProject {
     pub project_id: String,
     pub project_type: String,
@@ -140,7 +140,6 @@ pub(crate) struct ModrinthProject {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub(crate) struct ModrinthSearchResult {
     pub hits: Vec<ModrinthProject>,
     pub offset: u32,
@@ -149,7 +148,6 @@ pub(crate) struct ModrinthSearchResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub(crate) struct ModrinthFileHashes {
     #[serde(default)]
     pub sha1: Option<String>,
@@ -158,7 +156,6 @@ pub(crate) struct ModrinthFileHashes {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub(crate) struct ModrinthFile {
     pub url: String,
     pub filename: String,
@@ -170,7 +167,6 @@ pub(crate) struct ModrinthFile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub(crate) struct ModrinthDependency {
     #[serde(default)]
     pub version_id: Option<String>,
@@ -181,7 +177,6 @@ pub(crate) struct ModrinthDependency {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub(crate) struct ModrinthVersion {
     pub id: String,
     pub project_id: String,
@@ -659,62 +654,64 @@ async fn fetch_version(version_id: &str) -> Result<ModrinthVersion, String> {
 }
 
 async fn collect_required_versions(
-    version: ModrinthVersion,
+    root_version: ModrinthVersion,
     game_version: &str,
-    visited: &mut HashSet<String>,
-    output: &mut Vec<ModrinthVersion>,
-    depth: usize,
-) -> Result<(), String> {
-    if depth > 16 || output.len() > 64 {
-        return Err("This mod has an unusually deep dependency tree; installation was stopped safely".to_owned());
-    }
-    if !visited.insert(version.id.clone()) {
-        return Ok(());
-    }
-    if !version.game_versions.iter().any(|value| value == game_version)
-        || !version.loaders.iter().any(|value| value == "fabric")
-    {
-        return Err(format!(
-            "{} {} is not compatible with Minecraft {game_version} and Fabric",
-            version.name, version.version_number
-        ));
-    }
-    if version.environment.as_deref() == Some("server_only")
-        || version.environment.as_deref() == Some("dedicated_server_only")
-    {
-        return Err(format!("{} is a server-only mod and cannot be installed on a client", version.name));
-    }
+) -> Result<Vec<ModrinthVersion>, String> {
+    let mut visited = HashSet::new();
+    let mut output = Vec::new();
+    let mut pending = vec![(root_version, 0_usize)];
 
-    for dependency in &version.dependencies {
-        if dependency.dependency_type != "required" {
+    while let Some((version, depth)) = pending.pop() {
+        if depth > 16 || output.len() + pending.len() > 64 {
+            return Err("This mod has an unusually deep dependency tree; installation was stopped safely".to_owned());
+        }
+        if !visited.insert(version.id.clone()) {
             continue;
         }
-        let dependency_version = if let Some(id) = dependency.version_id.as_deref() {
-            Some(fetch_version(id).await?)
-        } else if let Some(project_id) = dependency.project_id.as_deref() {
-            get_project_versions(project_id, Some(game_version), Some("fabric"))
-                .await?
-                .into_iter()
-                .find(|candidate| {
-                    candidate.game_versions.iter().any(|value| value == game_version)
-                        && candidate.loaders.iter().any(|value| value == "fabric")
-                })
-        } else {
-            None
-        };
-        if let Some(dependency_version) = dependency_version {
-            collect_required_versions(
-                dependency_version,
-                game_version,
-                visited,
-                output,
-                depth + 1,
-            )
-            .await?;
+        if !version.game_versions.iter().any(|value| value == game_version)
+            || !version.loaders.iter().any(|value| value == "fabric")
+        {
+            return Err(format!(
+                "{} {} is not compatible with Minecraft {game_version} and Fabric",
+                version.name, version.version_number
+            ));
         }
+        if matches!(
+            version.environment.as_deref(),
+            Some("server_only" | "dedicated_server_only")
+        ) {
+            return Err(format!("{} is a server-only mod and cannot be installed on a client", version.name));
+        }
+
+        for dependency in &version.dependencies {
+            if dependency.dependency_type != "required" {
+                continue;
+            }
+            let dependency_version = if let Some(id) = dependency.version_id.as_deref() {
+                Some(fetch_version(id).await?)
+            } else if let Some(project_id) = dependency.project_id.as_deref() {
+                get_project_versions(project_id, Some(game_version), Some("fabric"))
+                    .await?
+                    .into_iter()
+                    .find(|candidate| {
+                        candidate.game_versions.iter().any(|value| value == game_version)
+                            && candidate.loaders.iter().any(|value| value == "fabric")
+                    })
+            } else {
+                None
+            };
+            if let Some(dependency_version) = dependency_version {
+                pending.push((dependency_version, depth + 1));
+            } else {
+                return Err(format!(
+                    "A required dependency for {} could not be resolved",
+                    version.name
+                ));
+            }
+        }
+        output.push(version);
     }
-    output.push(version);
-    Ok(())
+    Ok(output)
 }
 
 async fn install_modrinth_file(
@@ -795,9 +792,7 @@ async fn install_modrinth_mod_inner(
         })
         .ok_or_else(|| format!("No Fabric release of this project supports Minecraft {game_version}"))?;
 
-    let mut versions = Vec::new();
-    let mut visited = HashSet::new();
-    collect_required_versions(selected, &game_version, &mut visited, &mut versions, 0).await?;
+    let versions = collect_required_versions(selected, &game_version).await?;
 
     let total = versions.iter().map(|version| {
         version.files.iter().filter(|file| file.primary).count().max(1)
