@@ -9,7 +9,11 @@ The roadmap is ordered by user value and technical dependencies. A milestone is 
 - [x] Add a navigable desktop UI foundation.
 - [x] Add a native Java and environment diagnostic command.
 - [x] Add frontend CI and product/architecture documentation.
-- [ ] Add native CI and Windows packaging smoke tests.
+- [x] Add native Windows compilation to CI and include the required Windows icon resource.
+- [x] Add native performance counters and a Performance diagnostics page.
+- [x] Add a verified, bounded-concurrency HTTP artifact transport.
+- [ ] Wire the transport to official Minecraft metadata and the Vanilla installation pipeline.
+- [ ] Add Windows packaging smoke tests and repeatable performance baselines.
 
 ## M1 — Real Vanilla launcher
 
