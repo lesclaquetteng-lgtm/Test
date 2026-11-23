@@ -276,3 +276,154 @@
   font: 8px var(--mono);
 }
 .instance-action-notice { color: #a7d298; }
+
+
+/* OneClient-inspired in-game experience controls */
+.modrinth-category-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 12px 0 14px;
+}
+.modrinth-category-chip {
+  min-height: 31px;
+  padding: 0 11px;
+  border: 1px solid rgba(210,230,209,.09);
+  border-radius: 6px;
+  background: rgba(255,255,255,.018);
+  color: #9aa891;
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease, color .15s ease;
+}
+.modrinth-category-chip:hover { border-color: rgba(195,243,106,.28); color: #dce9d2; }
+.modrinth-category-chip.active {
+  border-color: rgba(195,243,106,.36);
+  background: rgba(195,243,106,.10);
+  color: #d9f3b1;
+}
+.modrinth-installed-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+.modrinth-installed-filters button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 27px;
+  padding: 0 8px;
+  border: 1px solid rgba(210,230,209,.08);
+  border-radius: 5px;
+  background: transparent;
+  color: #879481;
+  font: 8px var(--mono);
+  cursor: pointer;
+}
+.modrinth-installed-filters button.active {
+  border-color: rgba(195,243,106,.24);
+  background: rgba(195,243,106,.07);
+  color: #d0e6b8;
+}
+.modrinth-installed-filters button span { color: #c3f36a; }
+.modrinth-installed-row.disabled { opacity: .72; }
+.modrinth-installed-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 4px; }
+.modrinth-installed-copy strong { overflow: hidden; color: #dce3fa; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.modrinth-installed-copy small { color: #7f8ca7; font-size: 8px; }
+.modrinth-mod-state {
+  min-width: 33px;
+  padding: 4px 5px;
+  border: 1px solid rgba(145,155,164,.14);
+  border-radius: 4px;
+  color: #8c99a6;
+  font: 8px var(--mono);
+  text-align: center;
+}
+.modrinth-mod-state.enabled {
+  border-color: rgba(195,243,106,.2);
+  background: rgba(195,243,106,.06);
+  color: #b9df8b;
+}
+.modrinth-installed-actions { display: flex; align-items: center; gap: 6px; }
+.modrinth-toggle-button {
+  min-height: 27px;
+  padding: 0 8px;
+  border: 1px solid rgba(195,243,106,.16);
+  border-radius: 5px;
+  background: rgba(195,243,106,.06);
+  color: #c5e5a0;
+  font: 8px var(--mono);
+  cursor: pointer;
+}
+.modrinth-toggle-button:hover:not(:disabled) { border-color: rgba(195,243,106,.35); background: rgba(195,243,106,.12); }
+.modrinth-toggle-button:disabled { opacity: .42; cursor: wait; }
+.modrinth-oneclient-feature {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px 24px;
+  align-items: start;
+  padding: 20px;
+  border: 1px solid rgba(137,154,255,.20);
+  border-radius: 11px;
+  background:
+    radial-gradient(ellipse at 0% 0%, rgba(89,108,218,.12), transparent 55%),
+    linear-gradient(135deg, rgba(25,31,48,.94), rgba(15,20,29,.96));
+}
+.modrinth-oneclient-copy { min-width: 0; }
+.modrinth-oneclient-copy h2 { margin: 7px 0 8px; color: #edf0ff; font-size: 18px; letter-spacing: -.035em; }
+.modrinth-oneclient-copy p { max-width: 760px; margin: 0; color: #9ba8c0; font-size: 10px; line-height: 1.7; }
+.modrinth-oneclient-pills { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 13px; }
+.modrinth-oneclient-pills span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 7px;
+  border: 1px solid rgba(150,167,255,.12);
+  border-radius: 5px;
+  background: rgba(130,148,255,.045);
+  color: #c0c9e8;
+  font-size: 8px;
+}
+.modrinth-oneclient-pills svg { color: #a9c67b; }
+.modrinth-oneclient-copy > small { display: block; margin-top: 12px; color: #818da6; font-size: 8px; line-height: 1.6; }
+.modrinth-oneclient-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+.modrinth-oneclient-actions .modrinth-provider-link { margin: 0; }
+.modrinth-oneclient-button {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+  border: 1px solid rgba(150,167,255,.28);
+  border-radius: 6px;
+  background: linear-gradient(135deg, rgba(91,110,232,.26), rgba(83,90,170,.16));
+  color: #e1e7ff;
+  font-size: 9px;
+  font-weight: 750;
+  cursor: pointer;
+}
+.modrinth-oneclient-button:hover:not(:disabled) { border-color: rgba(160,176,255,.5); background: rgba(94,111,225,.32); }
+.modrinth-oneclient-button:disabled { opacity: .5; cursor: wait; }
+.modrinth-oneclient-releases {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding-top: 13px;
+  border-top: 1px solid rgba(170,184,255,.10);
+}
+.modrinth-oneclient-license { grid-column: 1 / -1; color: #71809a; font-size: 7px; line-height: 1.5; }
+@media (max-width: 760px) {
+  .modrinth-oneclient-feature { grid-template-columns: 1fr; padding: 16px; }
+  .modrinth-oneclient-actions { align-items: stretch; }
+  .modrinth-oneclient-actions .modrinth-provider-link { align-self: flex-start; }
+  .modrinth-oneclient-button { width: 100%; }
+}
+@media (max-width: 560px) {
+  .modrinth-installed-row { flex-wrap: wrap; }
+  .modrinth-installed-copy { flex-basis: calc(100% - 44px); }
+  .modrinth-installed-actions { margin-left: auto; }
+}

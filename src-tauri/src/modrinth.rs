@@ -106,20 +106,28 @@ fn safe_modpack_instance_path(raw: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-fn safe_mod_filename(raw: &str) -> Result<String, String> {
+fn safe_installed_mod_filename(raw: &str) -> Result<String, String> {
     let path = safe_relative_path(raw)?;
-    if path.components().count() != 1
-        || !path
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("jar"))
-    {
+    if path.components().count() != 1 {
+        return Err(format!("Invalid installed mod file name: {raw}"));
+    }
+    let name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "Mod file name is not valid UTF-8".to_owned())?;
+    let lower = name.to_ascii_lowercase();
+    if !lower.ends_with(".jar") && !lower.ends_with(".jar.disabled") {
+        return Err(format!("Invalid installed mod file extension: {raw}"));
+    }
+    Ok(name.to_owned())
+}
+
+fn safe_mod_filename(raw: &str) -> Result<String, String> {
+    let name = safe_installed_mod_filename(raw)?;
+    if !name.to_ascii_lowercase().ends_with(".jar") {
         return Err(format!("Modrinth returned an invalid mod JAR name: {raw}"));
     }
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .map(str::to_owned)
-        .ok_or_else(|| "Modrinth file name is not valid UTF-8".to_owned())
+    Ok(name)
 }
 
 async fn fetch_limited(raw_url: &str, limit: usize) -> Result<Vec<u8>, String> {
@@ -262,6 +270,7 @@ pub(crate) struct FabricLoaderVersion {
 pub(crate) struct InstalledModFile {
     pub file_name: String,
     pub size: u64,
+    pub enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1207,7 +1216,9 @@ pub(crate) async fn list_instance_mods(
             continue;
         }
         let name = entry.file_name().to_string_lossy().into_owned();
-        if !name.to_ascii_lowercase().ends_with(".jar") {
+        let lower_name = name.to_ascii_lowercase();
+        let enabled = lower_name.ends_with(".jar");
+        if !enabled && !lower_name.ends_with(".jar.disabled") {
             continue;
         }
         let size = entry
@@ -1218,6 +1229,7 @@ pub(crate) async fn list_instance_mods(
         mods.push(InstalledModFile {
             file_name: name,
             size,
+            enabled,
         });
     }
     mods.sort_by(|left, right| {
@@ -1241,7 +1253,7 @@ pub(crate) async fn remove_instance_mod(
         &instance_id,
     )
     .await?;
-    let safe_name = safe_mod_filename(&file_name)?;
+    let safe_name = safe_installed_mod_filename(&file_name)?;
     let path = instance_root.join("mods").join(safe_name);
     let metadata = fs::symlink_metadata(&path)
         .await
@@ -1252,6 +1264,82 @@ pub(crate) async fn remove_instance_mod(
     fs::remove_file(path)
         .await
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub(crate) async fn set_instance_mod_enabled(
+    app: tauri::AppHandle,
+    instance_id: String,
+    file_name: String,
+    enabled: bool,
+) -> Result<InstalledModFile, String> {
+    if crate::launch::is_instance_running(&instance_id)? {
+        return Err("Stop this Minecraft instance before changing its mods.".to_owned());
+    }
+
+    let (instance_root, _) = read_instance_marker(
+        &app.path()
+            .app_data_dir()
+            .map_err(|error| error.to_string())?,
+        &instance_id,
+    )
+    .await?;
+    let mods_root = instance_root.join("mods");
+    let directory_metadata = fs::symlink_metadata(&mods_root)
+        .await
+        .map_err(|error| error.to_string())?;
+    if !directory_metadata.file_type().is_dir() || directory_metadata.file_type().is_symlink() {
+        return Err("Refusing to modify an unsafe mods directory".to_owned());
+    }
+
+    let safe_name = safe_installed_mod_filename(&file_name)?;
+    let source = mods_root.join(&safe_name);
+    let source_metadata = fs::symlink_metadata(&source)
+        .await
+        .map_err(|error| error.to_string())?;
+    if !source_metadata.file_type().is_file() || source_metadata.file_type().is_symlink() {
+        return Err("Refusing to modify a non-regular mod file".to_owned());
+    }
+
+    let currently_enabled = safe_name.to_ascii_lowercase().ends_with(".jar");
+    if currently_enabled == enabled {
+        return Ok(InstalledModFile {
+            file_name: safe_name,
+            size: source_metadata.len(),
+            enabled: currently_enabled,
+        });
+    }
+
+    let destination_name = if enabled {
+        if !safe_name.to_ascii_lowercase().ends_with(".jar.disabled") {
+            return Err("Disabled mod file has an invalid name".to_owned());
+        }
+        safe_name[..safe_name.len() - ".disabled".len()].to_owned()
+    } else {
+        format!("{safe_name}.disabled")
+    };
+    let destination = mods_root.join(&destination_name);
+    match fs::symlink_metadata(&destination).await {
+        Ok(_) => return Err("A mod file already exists at the target name".to_owned()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.to_string()),
+    }
+
+    fs::rename(&source, &destination)
+        .await
+        .map_err(|error| format!("Unable to change mod state: {error}"))?;
+    let metadata = fs::symlink_metadata(&destination)
+        .await
+        .map_err(|error| error.to_string())?;
+    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+        return Err("Mod file changed into an unsafe filesystem object".to_owned());
+    }
+
+    Ok(InstalledModFile {
+        file_name: destination_name,
+        size: metadata.len(),
+        enabled,
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -1927,7 +2015,9 @@ pub(crate) async fn install_modrinth_modpack(
 
 #[cfg(test)]
 mod tests {
-    use super::{maven_path, safe_mod_filename, safe_relative_path, valid_sha1};
+    use super::{
+        maven_path, safe_installed_mod_filename, safe_mod_filename, safe_relative_path, valid_sha1,
+    };
 
     #[test]
     fn validates_maven_paths_and_classifiers() {
@@ -1950,6 +2040,9 @@ mod tests {
         assert!(safe_mod_filename("example.jar").is_ok());
         assert!(safe_mod_filename("../example.jar").is_err());
         assert!(safe_mod_filename("config/example.jar").is_err());
+        assert!(safe_installed_mod_filename("example.jar.disabled").is_ok());
+        assert!(safe_installed_mod_filename("../example.jar.disabled").is_err());
+        assert!(safe_installed_mod_filename("example.zip").is_err());
         assert!(!valid_sha1("not-a-sha1"));
     }
 }

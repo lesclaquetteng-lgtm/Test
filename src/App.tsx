@@ -37,6 +37,7 @@ import type { LucideIcon } from "lucide-react";
 
 type Page = "overview" | "instances" | "accounts" | "modpacks" | "mods" | "downloads" | "performance" | "diagnostics" | "settings";
 const MEMORY_OPTIONS = [2048, 3072, 4096, 6144, 8192, 12288, 16384] as const;
+const ONECLIENT_PROJECT_ID = "oneclient-modpack";
 
 type RuntimeStatus = {
   platform: string;
@@ -104,7 +105,8 @@ type ModrinthVersion = {
   downloads: number;
 };
 type FabricLoaderVersion = { version: string; stable: boolean };
-type InstalledModFile = { fileName: string; size: number };
+type InstalledModFile = { fileName: string; size: number; enabled: boolean };
+type ModCategory = "all" | "hud" | "performance" | "pvp" | "utility" | "visuals";
 type LoaderRelease = {
   loader: "forge" | "neoforge";
   gameVersion: string;
@@ -233,8 +235,8 @@ const PAGE_INFO: Record<Page, { eyebrow: string; title: string; description: str
   },
   mods: {
     eyebrow: "MODRINTH LIBRARY",
-    title: "Mods",
-    description: "Search compatible Fabric mods, install required dependencies and manage files per instance."
+    title: "In-game",
+    description: "Build your in-game setup: browse HUD, PvP, visual and performance modules, enable or disable them per profile, or install the official OneClient experience."
   },
   downloads: {
     eyebrow: "TRANSFER CENTER",
@@ -331,7 +333,7 @@ function Topbar({
   const primary = [
     { id: "overview" as Page, label: "Home" },
     { id: "instances" as Page, label: "Versions" },
-    { id: "mods" as Page, label: "Mods" },
+    { id: "mods" as Page, label: "In-game" },
     { id: "modpacks" as Page, label: "Modpacks" },
     { id: "accounts" as Page, label: "Accounts" }
   ];
@@ -1324,6 +1326,25 @@ function InstanceManagementCard({
 }
 
 
+function matchesModCategory(project: ModrinthProject, category: ModCategory): boolean {
+  if (category === "all") return true;
+  const text = `${project.title} ${project.description} ${project.categories.join(" ")}`.toLowerCase();
+  const includesAny = (terms: string[]) => terms.some((term) => text.includes(term));
+  switch (category) {
+    case "hud":
+      return includesAny(["hud", "overlay", "keystroke", "crosshair", "armor status", "cps", "fps counter"]);
+    case "performance":
+      return includesAny(["performance", "optimization", "fps", "sodium", "lithium", "cull", "memory", "fast render"]);
+    case "pvp":
+      return includesAny(["pvp", "combat", "crosshair", "keystroke", "combo", "reach display", "sprint"]);
+    case "utility":
+      return includesAny(["utility", "quality of life", "qol", "chat", "inventory", "zoom", "waypoint", "map"]);
+    case "visuals":
+      return includesAny(["visual", "cosmetic", "animation", "particle", "render", "texture", "shader"]);
+  }
+  return false;
+}
+
 function ModrinthProjectIcon({ project, compact = false }: { project: ModrinthProject; compact?: boolean }) {
   return (
     <span className={compact ? "modrinth-project-icon compact" : "modrinth-project-icon"}>
@@ -1340,6 +1361,9 @@ function ModrinthModsPage({ isDesktop, onNavigate }: {
   const [selectedInstanceId, setSelectedInstanceId] = useState("");
   const [installedMods, setInstalledMods] = useState<InstalledModFile[]>([]);
   const [query, setQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<ModCategory>("all");
+  const [installedFilter, setInstalledFilter] = useState<"all" | "enabled" | "disabled">("all");
+  const [modActionFile, setModActionFile] = useState("");
   const [projects, setProjects] = useState<ModrinthProject[]>([]);
   const [totalHits, setTotalHits] = useState(0);
   const [loadingInstances, setLoadingInstances] = useState(true);
@@ -1354,6 +1378,10 @@ function ModrinthModsPage({ isDesktop, onNavigate }: {
   const gameVersion = selectedInstance?.gameVersion || selectedInstance?.id || "";
   const activeLoader = selectedInstance?.loader ?? "";
   const loaderReady = ["fabric", "forge", "neoforge"].includes(activeLoader);
+  const visibleProjects = projects.filter((project) => matchesModCategory(project, categoryFilter));
+  const visibleInstalledMods = installedMods.filter((file) =>
+    installedFilter === "all" || (installedFilter === "enabled" ? file.enabled : !file.enabled)
+  );
 
   const refreshInstances = useCallback(async () => {
     if (!isDesktop) {
@@ -1467,6 +1495,26 @@ function ModrinthModsPage({ isDesktop, onNavigate }: {
     }
   };
 
+  const toggleMod = async (file: InstalledModFile) => {
+    if (!selectedInstance || !loaderReady || modActionFile) return;
+    setModActionFile(file.fileName);
+    setError(null);
+    setNotice("");
+    try {
+      const updated = await invoke<InstalledModFile>("set_instance_mod_enabled", {
+        instanceId: selectedInstance.id,
+        fileName: file.fileName,
+        enabled: !file.enabled
+      });
+      setInstalledMods((current) => current.map((item) => item.fileName === file.fileName ? updated : item));
+      setNotice(`${updated.fileName} ${updated.enabled ? "enabled" : "disabled"}. Restart Minecraft for the change to take effect.`);
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setModActionFile("");
+    }
+  };
+
   const removeMod = async (fileName: string) => {
     if (!selectedInstance) return;
     setRemovingFile(fileName);
@@ -1546,7 +1594,7 @@ function ModrinthModsPage({ isDesktop, onNavigate }: {
         <div className="modrinth-section-heading">
           <div>
             <span className="section-eyebrow">DISCOVER PROJECTS</span>
-            <h2>Explore mods</h2>
+            <h2>Explore in-game modules</h2>
           </div>
           <span className="modrinth-result-count">{searching ? "Searching…" : totalHits.toLocaleString() + " projects"}</span>
         </div>
@@ -1568,8 +1616,22 @@ function ModrinthModsPage({ isDesktop, onNavigate }: {
         )}
         {error && <div className="modrinth-alert" role="alert">{error}</div>}
         {notice && <div className="modrinth-notice" role="status">{notice}</div>}
+        <div className="modrinth-category-filters" role="group" aria-label="Filter in-game mods">
+          {([
+            ["all", "All modules"],
+            ["hud", "HUD & UI"],
+            ["performance", "Performance"],
+            ["pvp", "PvP"],
+            ["utility", "Quality of life"],
+            ["visuals", "Visuals"]
+          ] as [ModCategory, string][]).map(([value, label]) => (
+            <button key={value} type="button" className={categoryFilter === value ? "modrinth-category-chip active" : "modrinth-category-chip"} onClick={() => setCategoryFilter(value)}>
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="modrinth-project-grid">
-          {projects.map((project) => (
+          {visibleProjects.map((project) => (
             <article className="modrinth-project-card" key={project.project_id}>
               <div className="modrinth-project-card-head">
                 <ModrinthProjectIcon project={project} />
@@ -1598,11 +1660,11 @@ function ModrinthModsPage({ isDesktop, onNavigate }: {
               </button>
             </article>
           ))}
-          {!searching && projects.length === 0 && (
+          {!searching && visibleProjects.length === 0 && (
             <div className="modrinth-empty">
               <Puzzle size={21} />
-              <strong>No matching mods found</strong>
-              <span>Try another project name or check your network connection.</span>
+              <strong>{projects.length === 0 ? "No matching mods found" : "No modules in this category"}</strong>
+              <span>{projects.length === 0 ? "Try another project name or check your network connection." : "Choose another category or search for a specific in-game feature."}</span>
             </div>
           )}
         </div>
@@ -1614,24 +1676,40 @@ function ModrinthModsPage({ isDesktop, onNavigate }: {
             <span className="section-eyebrow">LOCAL INSTANCE</span>
             <h2>Installed mods</h2>
           </div>
-          <span className="modrinth-result-count">{installedMods.length} files</span>
+          <div className="modrinth-installed-filters" role="group" aria-label="Filter installed mods">
+            {([
+              ["all", "All", installedMods.length],
+              ["enabled", "Enabled", installedMods.filter((file) => file.enabled).length],
+              ["disabled", "Disabled", installedMods.filter((file) => !file.enabled).length]
+            ] as ["all" | "enabled" | "disabled", string, number][]).map(([value, label, count]) => (
+              <button key={value} type="button" className={installedFilter === value ? "active" : ""} onClick={() => setInstalledFilter(value)}>
+                {label} <span>{count}</span>
+              </button>
+            ))}
+          </div>
         </div>
         {installedMods.length > 0 ? (
           <div className="modrinth-installed-list">
-            {installedMods.map((file) => (
-              <div className="modrinth-installed-row" key={file.fileName}>
+            {visibleInstalledMods.map((file) => (
+              <div className={file.enabled ? "modrinth-installed-row" : "modrinth-installed-row disabled"} key={file.fileName}>
                 <span className="modrinth-installed-icon"><Puzzle size={15} /></span>
-                <div><strong>{file.fileName}</strong><small>{formatBytes(file.size)}</small></div>
-                <button type="button" className="modrinth-remove-button" onClick={() => void removeMod(file.fileName)} disabled={Boolean(removingFile)} title={"Remove " + file.fileName}>
-                  {removingFile === file.fileName ? <RefreshCw size={14} className="spin" /> : <Trash2 size={14} />}
-                </button>
+                <div className="modrinth-installed-copy"><strong>{file.fileName}</strong><small>{formatBytes(file.size)} · {file.enabled ? "Loaded by Minecraft" : "Disabled"}</small></div>
+                <span className={file.enabled ? "modrinth-mod-state enabled" : "modrinth-mod-state"}>{file.enabled ? "ON" : "OFF"}</span>
+                <div className="modrinth-installed-actions">
+                  <button type="button" className="modrinth-toggle-button" onClick={() => void toggleMod(file)} disabled={Boolean(modActionFile) || Boolean(removingFile)} title={file.enabled ? "Disable this mod" : "Enable this mod"}>
+                    {modActionFile === file.fileName ? <RefreshCw size={13} className="spin" /> : file.enabled ? "Disable" : "Enable"}
+                  </button>
+                  <button type="button" className="modrinth-remove-button" onClick={() => void removeMod(file.fileName)} disabled={Boolean(removingFile) || Boolean(modActionFile)} title={"Remove " + file.fileName}>
+                    {removingFile === file.fileName ? <RefreshCw size={14} className="spin" /> : <Trash2 size={14} />}
+                  </button>
+                </div>
               </div>
             ))}
           </div>
         ) : (
           <div className="modrinth-empty compact">
             <Layers3 size={19} />
-            <span>No mod JAR files are installed in this profile yet.</span>
+            <span>{installedMods.length === 0 ? "No mod JAR files are installed in this profile yet." : "No mods match this filter."}</span>
           </div>
         )}
       </section>
@@ -1653,6 +1731,10 @@ function ModrinthModpacksPage({ isDesktop, onNavigate }: {
   const [installingVersion, setInstallingVersion] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
+  const [oneClientVersions, setOneClientVersions] = useState<ModrinthVersion[]>([]);
+  const [oneClientExpanded, setOneClientExpanded] = useState(false);
+  const [loadingOneClient, setLoadingOneClient] = useState(false);
+  const [installingOneClient, setInstallingOneClient] = useState("");
 
   const installedPacks = instances.filter((instance) => instance.instanceType === "modpack");
 
@@ -1738,6 +1820,50 @@ function ModrinthModpacksPage({ isDesktop, onNavigate }: {
     }
   };
 
+  const loadOneClientVersions = async () => {
+    if (oneClientExpanded) {
+      setOneClientExpanded(false);
+      return;
+    }
+    setLoadingOneClient(true);
+    setError(null);
+    try {
+      const releases = await invoke<ModrinthVersion[]>("get_project_versions_command", {
+        projectId: ONECLIENT_PROJECT_ID,
+        gameVersion: null,
+        loader: null
+      });
+      const installable = releases.filter((version) =>
+        version.files.some((file) => file.filename.toLowerCase().endsWith(".mrpack"))
+        && (version.loaders.length === 0 || version.loaders.includes("fabric"))
+      );
+      setOneClientVersions(installable);
+      setOneClientExpanded(true);
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setLoadingOneClient(false);
+    }
+  };
+
+  const installOneClientPack = async (version: ModrinthVersion) => {
+    setInstallingOneClient(version.id);
+    setError(null);
+    setNotice("");
+    try {
+      const installed = await invoke<InstalledInstance>("install_modrinth_modpack", {
+        projectId: ONECLIENT_PROJECT_ID,
+        versionId: version.id
+      });
+      setNotice(`OneClient ${version.version_number} installed as ${installed.id}. Its isolated profile is available in Versions and Home.`);
+      await refreshInstances();
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setInstallingOneClient("");
+    }
+  };
+
   if (!isDesktop) {
     return (
       <EmptyPage
@@ -1763,6 +1889,47 @@ function ModrinthModpacksPage({ isDesktop, onNavigate }: {
         <a href="https://modrinth.com/modpacks" target="_blank" rel="noreferrer" className="modrinth-provider-link">
           Browse Modrinth <ExternalLink size={13} />
         </a>
+      </section>
+
+      <section className="modrinth-oneclient-feature">
+        <div className="modrinth-oneclient-copy">
+          <span className="section-eyebrow">FEATURED CLIENT · POLYFROST</span>
+          <h2>OneClient in-game experience</h2>
+          <p>Install the official OneClient modpack in its own isolated profile. It brings the OneConfig-powered in-game settings, themes, HUD modules, performance stack and the world-hosting features advertised by Polyfrost.</p>
+          <div className="modrinth-oneclient-pills">
+            <span><CheckCircle2 size={12} /> Customizable HUD</span>
+            <span><CheckCircle2 size={12} /> Themes & mod settings</span>
+            <span><CheckCircle2 size={12} /> Performance modules</span>
+            <span><CheckCircle2 size={12} /> Multiplayer features</span>
+          </div>
+          <small>Official source: Fabric only, modern Minecraft releases. It creates a separate profile and does not modify your existing worlds or mods. Not a 1.8.9 PvP pack.</small>
+        </div>
+        <div className="modrinth-oneclient-actions">
+          <a href="https://modrinth.com/modpack/oneclient-modpack" target="_blank" rel="noreferrer" className="modrinth-provider-link">
+            Official Modrinth page <ExternalLink size={13} />
+          </a>
+          <button type="button" className="modrinth-oneclient-button" onClick={() => void loadOneClientVersions()} disabled={loadingOneClient || Boolean(installingOneClient)}>
+            {loadingOneClient ? <RefreshCw size={14} className="spin" /> : <Layers3 size={14} />}
+            {loadingOneClient ? "Loading releases…" : oneClientExpanded ? "Hide releases" : "Choose OneClient version"}
+          </button>
+        </div>
+        {oneClientExpanded && (
+          <div className="modrinth-oneclient-releases">
+            {oneClientVersions.length > 0 ? oneClientVersions.slice(0, 8).map((version) => (
+              <div className="modrinth-version-row" key={version.id}>
+                <div>
+                  <strong>{version.version_number}</strong>
+                  <small>{version.game_versions.slice(0, 4).join(", ")} · Fabric</small>
+                </div>
+                <button type="button" onClick={() => void installOneClientPack(version)} disabled={Boolean(installingOneClient) || Boolean(installingVersion)}>
+                  {installingOneClient === version.id ? <RefreshCw size={13} className="spin" /> : <Download size={13} />}
+                  {installingOneClient === version.id ? "Installing…" : "Install profile"}
+                </button>
+              </div>
+            )) : <span className="modrinth-version-loading">No installable official .mrpack release was returned.</span>}
+          </div>
+        )}
+        <span className="modrinth-oneclient-license">Installs directly from Modrinth · Upstream project license: GPL-3.0-only · NOVA does not bundle OneClient code.</span>
       </section>
 
       <section className="modrinth-section">
