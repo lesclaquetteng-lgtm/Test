@@ -370,6 +370,7 @@ fn redact_text(input: &str) -> String {
         "xbox_token",
         "xboxToken",
         "xsts_token",
+        "xstsToken",
         "authorization_code",
         "authorization",
         "password",
