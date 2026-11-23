@@ -450,7 +450,10 @@ mod tests {
     #[test]
     fn removes_partial_file_when_download_guard_is_dropped() {
         use super::{TempArtifactGuard, TEMP_SEQUENCE};
-        use std::{fs, time::{SystemTime, UNIX_EPOCH}};
+        use std::{
+            fs,
+            time::{SystemTime, UNIX_EPOCH},
+        };
 
         let unique = TEMP_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let nonce = SystemTime::now()
@@ -464,6 +467,9 @@ mod tests {
         assert!(path.exists());
         drop(guard);
 
-        assert!(!path.exists(), "cancelled download temp file must be removed");
+        assert!(
+            !path.exists(),
+            "cancelled download temp file must be removed"
+        );
     }
 }
