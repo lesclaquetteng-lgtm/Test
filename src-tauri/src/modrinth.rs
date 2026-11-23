@@ -196,7 +196,7 @@ pub(crate) struct ModrinthSearchResult {
     pub total_hits: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub(crate) struct ModrinthFileHashes {
     #[serde(default)]
     pub sha1: Option<String>,
@@ -522,10 +522,11 @@ fn fabric_artifact(library: &Value) -> Result<FabricArtifact, String> {
             segments.push(segment);
         }
     }
+    let artifact_url = validate_fabric_artifact_url(url.as_str(), &name)?;
     Ok(FabricArtifact {
         name,
         path,
-        url: validate_fabric_artifact_url(url.as_str(), &name)?,
+        url: artifact_url,
         sha1,
         size: library.get("size").and_then(Value::as_u64),
     })
@@ -1336,7 +1337,10 @@ fn extract_mrpack_overrides(
         if entry.is_dir() {
             continue;
         }
-        let archive_name = entry.name().replace('\\', "/");
+        let archive_name = entry
+            .name()
+            .map_err(|error| error.to_string())?
+            .replace('\\', "/");
         if archive_name.starts_with("overrides/") {
             selected_entries.push((0_u8, index));
         } else if archive_name.starts_with("client-overrides/") {
