@@ -1,5 +1,6 @@
 use crate::{
     downloader::{download_verified, DownloadSpec},
+    loaders,
     mojang::{self, InstallProgress, InstalledInstance},
 };
 use futures_util::StreamExt;
@@ -1634,26 +1635,60 @@ async fn install_modrinth_modpack_inner(
         .ok_or_else(|| "Modrinth pack does not declare a valid Minecraft version".to_owned())?
         .clone();
     for dependency in index.dependencies.keys() {
-        if !matches!(dependency.as_str(), "minecraft" | "fabric-loader") {
+        if !matches!(
+            dependency.as_str(),
+            "minecraft" | "fabric-loader" | "forge" | "neoforge"
+        ) {
             return Err(format!(
-                "This pack requires the unsupported {dependency} dependency; this NOVA build currently supports Fabric packs only."
+                "This pack requires the unsupported {dependency} dependency; supported loaders are Fabric, Forge and NeoForge."
             ));
         }
     }
-    let fabric_loader = index.dependencies.get("fabric-loader").cloned();
-    if fabric_loader
-        .as_deref()
-        .is_some_and(|value| !safe_identifier(value))
-    {
-        return Err("Modrinth pack specifies an invalid Fabric loader version".to_owned());
+
+    let declared_loaders = ["fabric-loader", "forge", "neoforge"]
+        .into_iter()
+        .filter_map(|key| index.dependencies.get(key).map(|version| (key, version)))
+        .collect::<Vec<_>>();
+    if declared_loaders.len() > 1 {
+        return Err("Modrinth pack declares more than one mod loader; NOVA will not guess which runtime to install.".to_owned());
     }
-    if fabric_loader.is_none()
-        && index
-            .files
-            .iter()
-            .any(|entry| entry.path.to_ascii_lowercase().starts_with("mods/"))
+
+    let selected_loader: Option<(String, String)> = if let Some((kind, requested_version)) = declared_loaders.first() {
+        if !safe_identifier(requested_version) {
+            return Err(format!("Modrinth pack specifies an invalid {kind} version"));
+        }
+        match *kind {
+            "fabric-loader" => Some(("fabric".to_owned(), (*requested_version).clone())),
+            "forge" | "neoforge" => {
+                let releases = loaders::list_loader_versions(game_version.clone(), (*kind).to_owned()).await?;
+                let release = releases
+                    .into_iter()
+                    .find(|release| {
+                        release.version == **requested_version
+                            || release.display_version == **requested_version
+                    })
+                    .ok_or_else(|| {
+                        format!(
+                            "The requested {kind} build {requested_version} is not published for Minecraft {game_version}"
+                        )
+                    })?;
+                Some(((*kind).to_owned(), release.version))
+            }
+            _ => None,
+        }
+    } else {
+        None
+    };
+
+    if selected_loader.is_none()
+        && index.files.iter().any(|entry| {
+            entry.path.to_ascii_lowercase().starts_with("mods/")
+                && entry.env.as_ref()
+                    .and_then(|environment| environment.get("client"))
+                    .is_none_or(|environment| !matches!(environment.as_str(), "optional" | "unsupported"))
+        })
     {
-        return Err("This pack contains mods but does not declare a supported loader.".to_owned());
+        return Err("This pack contains client mods but does not declare Fabric, Forge or NeoForge.".to_owned());
     }
 
     let pack_instance_id = format!("pack_{version_id}");
@@ -1683,14 +1718,30 @@ async fn install_modrinth_modpack_inner(
     )
     .await?;
 
-    if let Some(loader_version) = fabric_loader {
-        marker = install_fabric_loader_inner(
-            data_root,
-            &pack_instance_id,
-            Some(&loader_version),
-            progress.clone(),
-        )
-        .await?;
+    if let Some((loader, loader_version)) = selected_loader {
+        marker = match loader.as_str() {
+            "fabric" => {
+                install_fabric_loader_inner(
+                    data_root,
+                    &pack_instance_id,
+                    Some(&loader_version),
+                    progress.clone(),
+                )
+                .await?
+            }
+            "forge" | "neoforge" => {
+                loaders::install_loader_inner(
+                    data_root,
+                    cache_root,
+                    &pack_instance_id,
+                    &loader,
+                    &loader_version,
+                    false,
+                )
+                .await?
+            }
+            _ => return Err("Unsupported mod loader in Modrinth pack".to_owned()),
+        };
     }
 
     let total_pack_files = index.files.len();
