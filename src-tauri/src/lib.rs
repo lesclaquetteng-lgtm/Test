@@ -6,6 +6,7 @@ pub(crate) mod diagnostics;
 pub(crate) mod downloader;
 pub(crate) mod launch;
 pub(crate) mod mojang;
+pub(crate) mod modrinth;
 pub(crate) mod natives;
 pub(crate) mod performance;
 
@@ -235,7 +236,14 @@ pub fn run() {
             run_diagnostics,
             open_diagnostics_folder,
             list_launch_sessions,
-            stop_minecraft
+            stop_minecraft,
+            modrinth::search_projects,
+            modrinth::get_project_versions_command,
+            modrinth::get_fabric_loader_versions,
+            modrinth::install_fabric_loader,
+            modrinth::install_modrinth_mod,
+            modrinth::list_instance_mods,
+            modrinth::remove_instance_mod
         ])
         .run(tauri::generate_context!())
         .expect("error while running NOVA Launcher");
