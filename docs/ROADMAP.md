@@ -64,7 +64,7 @@ Acceptance: account sessions survive relaunch securely, and sensitive data is ab
 
 ## M5 — Diagnostics and polish
 
-- [ ] Crash classification by JVM / Minecraft failure signature and targeted recovery suggestions.
+- [x] Pattern-based crash triage for common JVM, classpath, native library, OpenGL, archive, network, filesystem and mod-loader signatures, with matched evidence, confidence labels and recovery suggestions (heuristic, not guaranteed root cause).
 - [x] Windows hardware inventory (CPU, logical processors, physical RAM, GPU names and driver versions where exposed); non-Windows fallback inventory.
 - [x] Java candidate discovery and compatibility checks against official version metadata.
 - [x] Automatic quick diagnostics at desktop startup, on launch preflight failure and after abnormal Minecraft process exit.
