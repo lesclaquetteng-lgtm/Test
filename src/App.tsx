@@ -1352,7 +1352,8 @@ function ModrinthModsPage({ isDesktop, onNavigate }: {
 
   const selectedInstance = instances.find((instance) => instance.id === selectedInstanceId) ?? null;
   const gameVersion = selectedInstance?.gameVersion || selectedInstance?.id || "";
-  const fabricReady = selectedInstance?.loader === "fabric";
+  const activeLoader = selectedInstance?.loader ?? "";
+  const loaderReady = ["fabric", "forge", "neoforge"].includes(activeLoader);
 
   const refreshInstances = useCallback(async () => {
     if (!isDesktop) {
@@ -1365,7 +1366,7 @@ function ModrinthModsPage({ isDesktop, onNavigate }: {
       setInstances(next);
       setSelectedInstanceId((current) => current && next.some((item) => item.id === current)
         ? current
-        : next.find((item) => item.loader === "fabric")?.id ?? next[0]?.id ?? "");
+        : next.find((item) => ["fabric", "forge", "neoforge"].includes(item.loader ?? ""))?.id ?? next[0]?.id ?? "");
     } catch (cause) {
       setError(String(cause));
     } finally {
@@ -1404,7 +1405,7 @@ function ModrinthModsPage({ isDesktop, onNavigate }: {
         query,
         projectType: "mod",
         gameVersion: gameVersion || null,
-        loader: "fabric",
+        loader: activeLoader || "fabric",
         offset: 0
       });
       setProjects(result.hits);
@@ -1416,7 +1417,7 @@ function ModrinthModsPage({ isDesktop, onNavigate }: {
     } finally {
       setSearching(false);
     }
-  }, [isDesktop, query, gameVersion]);
+  }, [isDesktop, query, gameVersion, activeLoader]);
 
   useEffect(() => {
     if (!isDesktop) return;
@@ -1448,7 +1449,7 @@ function ModrinthModsPage({ isDesktop, onNavigate }: {
   };
 
   const installProject = async (project: ModrinthProject) => {
-    if (!selectedInstance || !fabricReady) return;
+    if (!selectedInstance || !loaderReady) return;
     setInstallingProject(project.project_id);
     setError(null);
     setNotice("");
@@ -1499,7 +1500,7 @@ function ModrinthModsPage({ isDesktop, onNavigate }: {
       <section className="modrinth-intro">
         <div className="modrinth-intro-mark"><Puzzle size={22} /></div>
         <div>
-          <span className="section-eyebrow">MODRINTH · FABRIC</span>
+          <span className="section-eyebrow">MODRINTH · {activeLoader ? activeLoader.toUpperCase() : "MODS"}</span>
           <h2>Your next Minecraft setup starts here.</h2>
           <p>Search real projects, match the selected Minecraft version, and install required dependencies into one isolated profile.</p>
         </div>
@@ -1530,8 +1531,8 @@ function ModrinthModsPage({ isDesktop, onNavigate }: {
           </select>
         </label>
         {selectedInstance && (
-          fabricReady ? (
-            <span className="modrinth-status success"><CheckCircle2 size={14} /> Fabric ready</span>
+          loaderReady ? (
+            <span className="modrinth-status success"><CheckCircle2 size={14} /> {activeLoader === "neoforge" ? "NeoForge" : activeLoader === "forge" ? "Forge" : "Fabric"} ready</span>
           ) : (
             <button className="modrinth-primary-button" onClick={() => void activateFabric()} disabled={installingFabric}>
               {installingFabric ? <RefreshCw size={14} className="spin" /> : <Download size={14} />}
@@ -1560,9 +1561,9 @@ function ModrinthModsPage({ isDesktop, onNavigate }: {
             Search
           </button>
         </div>
-        {!fabricReady && selectedInstance && (
+        {!loaderReady && selectedInstance && (
           <p className="modrinth-inline-warning">
-            <ShieldCheck size={15} /> Browse now, but installing mods requires Fabric on the selected profile. NOVA keeps Vanilla files separate.
+            <ShieldCheck size={15} /> Browse now, but installing mods requires Fabric, Forge or NeoForge on this profile. Open Versions to add a loader. NOVA keeps Vanilla files separate.
           </p>
         )}
         {error && <div className="modrinth-alert" role="alert">{error}</div>}
@@ -1590,7 +1591,7 @@ function ModrinthModsPage({ isDesktop, onNavigate }: {
                 type="button"
                 className="modrinth-project-action"
                 onClick={() => void installProject(project)}
-                disabled={!fabricReady || Boolean(installingProject)}
+                disabled={!loaderReady || Boolean(installingProject)}
               >
                 {installingProject === project.project_id ? <RefreshCw size={14} className="spin" /> : <Download size={14} />}
                 {installingProject === project.project_id ? "Installing dependencies…" : "Install mod"}
@@ -1757,7 +1758,7 @@ function ModrinthModpacksPage({ isDesktop, onNavigate }: {
         <div>
           <span className="section-eyebrow">MODRINTH · .MRPACK</span>
           <h2>Whole worlds, ready to install.</h2>
-          <p>Install supported Fabric modpacks as separate profiles. NOVA checks archive hashes, downloads client files and applies overrides safely.</p>
+          <p>Install supported Fabric, Forge and NeoForge modpacks as separate profiles. NOVA checks archive hashes, downloads client files and applies overrides safely.</p>
         </div>
         <a href="https://modrinth.com/modpacks" target="_blank" rel="noreferrer" className="modrinth-provider-link">
           Browse Modrinth <ExternalLink size={13} />
@@ -1809,8 +1810,8 @@ function ModrinthModpacksPage({ isDesktop, onNavigate }: {
                 <div className="modrinth-version-list">
                   {loadingVersions ? <span className="modrinth-version-loading">Loading releases…</span> : versions.length > 0 ? versions.slice(0, 8).map((version) => {
                     const hasArchive = version.files.some((file) => file.filename.toLowerCase().endsWith(".mrpack"));
-                    const hasFabric = version.loaders.includes("fabric") || version.loaders.includes("minecraft") || version.loaders.length === 0;
-                    const supported = hasArchive && hasFabric;
+                    const hasSupportedLoader = version.loaders.some((loader) => ["fabric", "forge", "neoforge", "minecraft"].includes(loader)) || version.loaders.length === 0;
+                    const supported = hasArchive && hasSupportedLoader;
                     return (
                       <div className="modrinth-version-row" key={version.id}>
                         <div><strong>{version.version_number}</strong><small>{version.game_versions.slice(0, 3).join(", ")} · {version.loaders.join(", ") || "loader declared in pack"}</small></div>
@@ -1821,7 +1822,7 @@ function ModrinthModpacksPage({ isDesktop, onNavigate }: {
                       </div>
                     );
                   }) : <span className="modrinth-version-loading">No installable .mrpack release was found.</span>}
-                  <small className="modrinth-version-disclaimer">NOVA currently installs Fabric and loader-free client packs. Forge, NeoForge and Quilt packs are rejected safely.</small>
+                  <small className="modrinth-version-disclaimer">NOVA installs Fabric, Forge, NeoForge and loader-free client packs. Quilt and unknown loader dependencies are rejected safely.</small>
                 </div>
               )}
             </article>
