@@ -1317,6 +1317,17 @@ fn extract_mrpack_overrides(
             let _ = std::fs::remove_file(&temporary);
             return Err("Modrinth override size changed during extraction".to_owned());
         }
+        match std::fs::symlink_metadata(&destination) {
+            Ok(metadata) if metadata.file_type().is_file() && !metadata.file_type().is_symlink() => {
+                std::fs::remove_file(&destination).map_err(|error| error.to_string())?;
+            }
+            Ok(_) => {
+                let _ = std::fs::remove_file(&temporary);
+                return Err("Modrinth override destination is not a regular file".to_owned());
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.to_string()),
+        }
         std::fs::rename(&temporary, &destination).map_err(|error| error.to_string())?;
         copied_files += 1;
         copied_bytes = copied_bytes.saturating_add(copied);
@@ -1587,13 +1598,14 @@ async fn install_modrinth_modpack_inner(
         .await?;
     }
 
-    let archive_for_overrides = archive_path.clone();
-    let instance_for_overrides = instance_root.clone();
-    let (override_files, override_bytes) = tokio::task::spawn_blocking(move || {
-        extract_mrpack_overrides(&archive_for_overrides, &instance_for_overrides)
-    })
-    .await
-    .map_err(|error| format!("Modrinth override extraction worker failed: {error}"))??;
+    let total_pack_files = index.files.len();
+    let total_pack_bytes = index.files.iter().fold(0_u64, |total, entry| {
+        total.saturating_add(entry.file_size)
+    });
+    const MAX_TOTAL_PACK_BYTES: u64 = 16 * 1024 * 1024 * 1024;
+    if total_pack_bytes > MAX_TOTAL_PACK_BYTES {
+        return Err("Modrinth pack exceeds NOVA's 16 GiB unpacked file limit".to_owned());
+    }
 
     let mut downloaded_files = 0_usize;
     let mut downloaded_bytes = 0_u64;
@@ -1669,7 +1681,7 @@ async fn install_modrinth_modpack_inner(
                 .send(InstallProgress {
                     phase: "modrinth-pack-files".to_owned(),
                     completed_files: downloaded_files,
-                    total_files: index.files.len(),
+                    total_files: total_pack_files,
                     current_file: relative_string,
                     transferred_bytes: downloaded_bytes,
                     total_bytes: None,
@@ -1678,6 +1690,16 @@ async fn install_modrinth_modpack_inner(
                 .await;
         }
     }
+
+    // The pack's own downloads are installed first. Generic overrides are then
+    // layered on top, followed by client-overrides as the final client layer.
+    let archive_for_overrides = archive_path.clone();
+    let instance_for_overrides = instance_root.clone();
+    let (override_files, override_bytes) = tokio::task::spawn_blocking(move || {
+        extract_mrpack_overrides(&archive_for_overrides, &instance_for_overrides)
+    })
+    .await
+    .map_err(|error| format!("Modrinth override extraction worker failed: {error}"))??;
 
     marker.files = marker
         .files
