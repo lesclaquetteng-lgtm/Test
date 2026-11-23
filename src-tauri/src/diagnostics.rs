@@ -220,6 +220,15 @@ fn safe_file_sha1(path: &Path) -> Result<String, String> {
     Ok(output)
 }
 
+fn safe_file_sha1_under(root: &Path, path: &Path) -> Option<String> {
+    let canonical_root = fs::canonicalize(root).ok()?;
+    let canonical_path = fs::canonicalize(path).ok()?;
+    if !canonical_path.starts_with(&canonical_root) || !canonical_path.is_file() {
+        return None;
+    }
+    safe_file_sha1(&canonical_path).ok()
+}
+
 fn safe_relative_path(raw: &str) -> Option<PathBuf> {
     let path = Path::new(raw);
     if raw.is_empty()
@@ -439,12 +448,26 @@ fn process_log_snapshot(instance_id: Option<&str>) -> Vec<DiagnosticLog> {
         .collect()
 }
 
-fn excerpt_from_file(path: &Path, max_bytes: u64, max_lines: usize) -> Vec<String> {
-    let Ok(metadata) = fs::metadata(path) else {
+fn excerpt_from_file(
+    allowed_root: &Path,
+    path: &Path,
+    max_bytes: u64,
+    max_lines: usize,
+) -> Vec<String> {
+    let Ok(canonical_root) = fs::canonicalize(allowed_root) else {
+        return Vec::new();
+    };
+    let Ok(canonical_path) = fs::canonicalize(path) else {
+        return Vec::new();
+    };
+    if !canonical_path.starts_with(&canonical_root) || !canonical_path.is_file() {
+        return Vec::new();
+    }
+    let Ok(metadata) = fs::metadata(&canonical_path) else {
         return Vec::new();
     };
     let start = metadata.len().saturating_sub(max_bytes);
-    let Ok(mut file) = File::open(path) else {
+    let Ok(mut file) = File::open(&canonical_path) else {
         return Vec::new();
     };
     if start > 0 && file.seek(std::io::SeekFrom::Start(start)).is_err() {
@@ -471,6 +494,9 @@ fn latest_file_with_prefix(root: &Path, prefix: &str, extension: Option<&str>) -
     entries
         .flatten()
         .filter_map(|entry| {
+            if !entry.file_type().ok()?.is_file() {
+                return None;
+            }
             let path = entry.path();
             let name = path.file_name()?.to_string_lossy();
             if !name.starts_with(prefix) {
@@ -539,8 +565,6 @@ async fn collect_system_information() -> SystemInformation {
             .args([
                 "-NoProfile",
                 "-NonInteractive",
-                "-ExecutionPolicy",
-                "Bypass",
                 "-Command",
                 script,
             ])
@@ -661,11 +685,7 @@ fn inspect_instance(
     let version_root = instance_root.join("versions").join(instance_id);
     let client_path = version_root.join(format!("{instance_id}.jar"));
     let expected_client = marker.client_sha1.clone();
-    let actual_client = if client_path.is_file() {
-        safe_file_sha1(&client_path).ok()
-    } else {
-        None
-    };
+    let actual_client = safe_file_sha1_under(&version_root, &client_path);
     let client_status = match (&expected_client, &actual_client) {
         (Some(expected), Some(actual)) if expected.eq_ignore_ascii_case(actual) => "verified",
         (Some(_), Some(_)) => "hash_mismatch",
@@ -832,11 +852,20 @@ fn inspect_instance(
         .as_ref()
         .and_then(|value| value.get("libraries"))
         .and_then(Value::as_array);
+    let libraries_root = data_root.join("shared").join("libraries");
+    let canonical_libraries_root = fs::canonicalize(&libraries_root).ok();
     let mut library_count = 0usize;
     let mut missing_libraries = 0usize;
     let mut invalid_libraries = 0usize;
     if let Some(libraries) = libraries {
-        for library in libraries.iter().filter(|library| library_allowed(library)) {
+        if libraries.len() > MAX_LIBRARY_COUNT {
+            invalid_libraries += 1;
+        }
+        for library in libraries
+            .iter()
+            .take(MAX_LIBRARY_COUNT)
+            .filter(|library| library_allowed(library))
+        {
             let Some(artifact) = library
                 .get("downloads")
                 .and_then(|value| value.get("artifact"))
@@ -852,26 +881,34 @@ fn inspect_instance(
                 continue;
             };
             library_count += 1;
-            let path = data_root.join("shared").join("libraries").join(relative);
+            let path = libraries_root.join(relative);
             let expected_size = artifact.get("size").and_then(Value::as_u64);
             let expected_hash = artifact.get("sha1").and_then(Value::as_str);
-            match fs::metadata(&path) {
-                Ok(metadata) if metadata.is_file() => {
-                    if expected_size.is_some_and(|size| size != metadata.len()) {
-                        invalid_libraries += 1;
-                    } else if deep {
-                        if let Some(expected) = expected_hash {
-                            if safe_file_sha1(&path)
-                                .is_ok_and(|actual| actual.eq_ignore_ascii_case(expected))
-                            {
-                                // Verified against the official version metadata.
-                            } else {
+            match fs::canonicalize(&path) {
+                Ok(canonical)
+                    if canonical_libraries_root
+                        .as_ref()
+                        .is_some_and(|root| canonical.starts_with(root)) =>
+                {
+                    match fs::metadata(&canonical) {
+                        Ok(metadata) if metadata.is_file() => {
+                            if expected_size.is_some_and(|size| size != metadata.len()) {
                                 invalid_libraries += 1;
+                            } else if deep {
+                                if let Some(expected) = expected_hash {
+                                    if safe_file_sha1_under(&libraries_root, &canonical)
+                                        .is_none_or(|actual| !actual.eq_ignore_ascii_case(expected))
+                                    {
+                                        invalid_libraries += 1;
+                                    }
+                                }
                             }
                         }
+                        _ => missing_libraries += 1,
                     }
                 }
-                _ => missing_libraries += 1,
+                Ok(_) => invalid_libraries += 1,
+                Err(_) => missing_libraries += 1,
             }
         }
     }
@@ -896,6 +933,11 @@ fn inspect_instance(
     let asset_index: Option<AssetIndex> = fs::read(&asset_index_path)
         .ok()
         .and_then(|bytes| serde_json::from_slice(&bytes).ok());
+    let assets_objects_root = data_root
+        .join("shared")
+        .join("assets")
+        .join("objects");
+    let canonical_assets_root = fs::canonicalize(&assets_objects_root).ok();
     let mut asset_count = 0usize;
     let mut missing_assets = 0usize;
     let mut invalid_assets = 0usize;
@@ -918,21 +960,28 @@ fn inspect_instance(
                     .join("objects")
                     .join(&hash[..2])
                     .join(&hash);
-                match fs::metadata(&path) {
-                    Ok(metadata) if metadata.is_file() => {
-                        if metadata.len() != object.size {
-                            invalid_assets += 1;
-                        } else if deep {
-                            if safe_file_sha1(&path)
-                                .is_ok_and(|actual| actual.eq_ignore_ascii_case(&hash))
-                            {
-                                // Verified against the content-addressed official hash.
-                            } else {
-                                invalid_assets += 1;
+                match fs::canonicalize(&path) {
+                    Ok(canonical)
+                        if canonical_assets_root
+                            .as_ref()
+                            .is_some_and(|root| canonical.starts_with(root)) =>
+                    {
+                        match fs::metadata(&canonical) {
+                            Ok(metadata) if metadata.is_file() => {
+                                if metadata.len() != object.size {
+                                    invalid_assets += 1;
+                                } else if deep
+                                    && safe_file_sha1_under(&assets_objects_root, &canonical)
+                                        .is_none_or(|actual| !actual.eq_ignore_ascii_case(&hash))
+                                {
+                                    invalid_assets += 1;
+                                }
                             }
+                            _ => missing_assets += 1,
                         }
                     }
-                    _ => missing_assets += 1,
+                    Ok(_) => invalid_assets += 1,
+                    Err(_) => missing_assets += 1,
                 }
             }
         }
@@ -1000,7 +1049,12 @@ fn inspect_instance(
 
     let logs_root = instance_root.join("logs");
     let latest_log_path = logs_root.join("latest.log");
-    let latest_log_excerpt = excerpt_from_file(&latest_log_path, MAX_LOG_BYTES, MAX_CAPTURED_LINES);
+    let latest_log_excerpt = excerpt_from_file(
+        &instance_root,
+        &latest_log_path,
+        MAX_LOG_BYTES,
+        MAX_CAPTURED_LINES,
+    );
     if latest_log_excerpt.is_empty() {
         add_check(
             checks,
@@ -1044,6 +1098,7 @@ fn inspect_instance(
                 .into_owned(),
         );
         crash_report_excerpt.extend(excerpt_from_file(
+            &crash_root,
             &path,
             MAX_CRASH_BYTES,
             MAX_CAPTURED_LINES,
@@ -1057,6 +1112,7 @@ fn inspect_instance(
                 .into_owned(),
         );
         crash_report_excerpt.extend(excerpt_from_file(
+            &instance_root,
             &path,
             MAX_CRASH_BYTES,
             MAX_CAPTURED_LINES,
