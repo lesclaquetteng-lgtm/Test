@@ -74,6 +74,8 @@ fn safe_id(value: &str) -> bool {
 fn safe_relative_path(raw: &str) -> Result<PathBuf, String> {
     let path = Path::new(raw);
     if raw.is_empty()
+        || raw.contains(':')
+        || raw.contains('\\')
         || path.is_absolute()
         || path
             .components()
@@ -530,12 +532,13 @@ async fn forward_logs<R>(
     instance_id: String,
     stream_name: &'static str,
 ) where
-    R: tokio::io::AsyncRead + Unpin,
+    R: tokio::io::AsyncRead + Unpin + Send + 'static,
 {
     let mut lines = BufReader::new(reader).lines();
     while let Ok(Some(line)) = lines.next_line().await {
         let bounded = if line.len() > 16 * 1024 {
-            format!("{}… [line truncated]", &line[..16 * 1024])
+            let prefix = line.chars().take(16 * 1024).collect::<String>();
+            format!("{prefix}… [line truncated]")
         } else {
             line
         };
@@ -716,7 +719,10 @@ pub(crate) async fn launch_instance(
             result = child.wait() => result,
             changed = stop_receiver.changed() => {
                 if changed.is_ok() && *stop_receiver.borrow() {
-                    child.kill().await
+                    match child.kill().await {
+                        Ok(()) => child.wait().await,
+                        Err(error) => Err(error),
+                    }
                 } else {
                     child.wait().await
                 }
