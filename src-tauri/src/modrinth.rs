@@ -870,15 +870,23 @@ async fn install_modrinth_file(
         .sha1
         .as_deref()
         .filter(|value| valid_sha1(value))
-        .ok_or_else(|| format!("Modrinth did not provide a valid SHA-1 checksum for {}", file.filename))?;
+        .ok_or_else(|| {
+            format!(
+                "Modrinth did not provide a valid SHA-1 checksum for {}",
+                file.filename
+            )
+        })?;
     let sha512 = file
         .hashes
         .sha512
         .as_deref()
-        .filter(|value| {
-            value.len() == 128 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
-        })
-        .ok_or_else(|| format!("Modrinth did not provide a valid SHA-512 checksum for {}", file.filename))?;
+        .filter(|value| value.len() == 128 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
+        .ok_or_else(|| {
+            format!(
+                "Modrinth did not provide a valid SHA-512 checksum for {}",
+                file.filename
+            )
+        })?;
     let download_url = safe_modpack_url(&file.url)?;
 
     let destination = instance_root.join("mods").join(&file_name);
@@ -927,7 +935,10 @@ async fn install_modrinth_file(
     .await
     {
         let _ = fs::remove_file(destination).await;
-        return Err(format!("Integrity verification failed for {}: {error}", file.filename));
+        return Err(format!(
+            "Integrity verification failed for {}: {error}",
+            file.filename
+        ));
     }
 
     if let Some(sender) = progress {
