@@ -12,7 +12,7 @@ NOVA is an independent desktop launcher project. Its goal is to combine a polish
 - **Native layer:** Rust
 - **Interface:** React + TypeScript + Vite
 - **Initial target:** Windows, with a cross-platform architecture
-- **Performance focus:** measurable native telemetry, bounded workloads and low-overhead UI
+- **Performance focus:** measurable native telemetry, bounded workloads, verified streaming downloads and low-overhead UI
 
 ## Requirements
 
