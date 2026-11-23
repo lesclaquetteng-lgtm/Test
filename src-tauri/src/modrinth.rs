@@ -815,6 +815,25 @@ async fn install_fabric_loader_inner(
     Ok(marker)
 }
 
+pub(crate) async fn repair_fabric_loader(
+    data_root: &Path,
+    instance_id: &str,
+    marker: InstalledInstance,
+) -> Result<InstalledInstance, String> {
+    if marker.id != instance_id || marker.loader.as_deref() != Some("fabric") {
+        return Err("The profile is not a NOVA-managed Fabric instance".to_owned());
+    }
+    let root = data_root.join("instances").join(instance_id);
+    write_instance_marker(&root, &marker).await?;
+    install_fabric_loader_inner(
+        data_root,
+        instance_id,
+        marker.loader_version.as_deref(),
+        None,
+    )
+    .await
+}
+
 #[tauri::command]
 pub(crate) async fn install_fabric_loader(
     app: tauri::AppHandle,
