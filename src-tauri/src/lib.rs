@@ -4,8 +4,9 @@ use tauri::{Emitter, Manager};
 
 pub(crate) mod diagnostics;
 pub(crate) mod downloader;
-pub(crate) mod launch;
 pub(crate) mod instance_manager;
+pub(crate) mod launch;
+pub(crate) mod loaders;
 pub(crate) mod modrinth;
 pub(crate) mod mojang;
 pub(crate) mod natives;
