@@ -111,6 +111,15 @@ type DiagnosticCheck = {
   evidence: string[];
   recommendedAction: string | null;
 };
+type CrashDiagnosis = {
+  code: string;
+  severity: string;
+  confidence: string;
+  title: string;
+  likelyCause: string;
+  evidence: string[];
+  recommendedAction: string;
+};
 type DiagnosticReport = {
   schemaVersion: number;
   reportId: string;
@@ -147,8 +156,10 @@ type DiagnosticReport = {
     latestLogExcerpt: string[];
     crashReportExcerpt: string[];
     crashArtifactNames: string[];
+    rootCauseHypotheses: CrashDiagnosis[];
   }[];
   network: { name: string; host: string; statusCode: number | null; latencyMs: number | null; reachable: boolean; detail: string }[];
+  rootCauseHypotheses: CrashDiagnosis[];
   checks: DiagnosticCheck[];
   recentProcessLogs: { timestampUnix: number; stream: string; line: string }[];
   reportPath: string;
@@ -1073,6 +1084,22 @@ function DiagnosticsPage({
                   <span>Client SHA-1 actual: {instance.clientActualSha1 ?? "unavailable"}</span>
                 </div>
                 {instance.crashArtifactNames.length > 0 && <p className="diagnostic-crash-files">Crash evidence: {instance.crashArtifactNames.join(", ")}</p>}
+                {instance.rootCauseHypotheses.length > 0 && (
+                  <div className="diagnostic-hypotheses">
+                    <div className="diagnostic-hypotheses-heading"><AlertCircle size={14} /><strong>LIKELY CAUSES · HYPOTHESES</strong></div>
+                    {instance.rootCauseHypotheses.map((diagnosis) => (
+                      <article className="diagnostic-hypothesis" key={diagnosis.code}>
+                        <div className="diagnostic-hypothesis-top">
+                          <strong>{diagnosis.title}</strong>
+                          <span className={diagnosis.severity === "critical" ? "diagnostic-pill failed" : "diagnostic-pill warning"}>{diagnosis.confidence.toUpperCase()} CONFIDENCE</span>
+                        </div>
+                        <p>{diagnosis.likelyCause}</p>
+                        {diagnosis.evidence.length > 0 && <details><summary>Matched log lines ({diagnosis.evidence.length})</summary><pre>{diagnosis.evidence.join("\\n")}</pre></details>}
+                        <div className="diagnostic-recommendation"><b>Suggested next step:</b> {diagnosis.recommendedAction}</div>
+                      </article>
+                    ))}
+                  </div>
+                )}
                 {instance.crashReportExcerpt.length > 0 && (
                   <details className="diagnostic-log-details">
                     <summary>Latest JVM / Minecraft crash excerpt ({instance.crashReportExcerpt.length} lines)</summary>
@@ -1110,6 +1137,27 @@ function DiagnosticsPage({
               ))}
             </div>
           </section>
+
+          {report.rootCauseHypotheses.length > 0 && (
+            <section className="panel diagnostic-section">
+              <div className="panel-heading">
+                <div><span className="section-eyebrow">AUTOMATIC TRIAGE</span><h2>Likely root causes</h2></div>
+                <span className="value-tag">{report.rootCauseHypotheses.length} HYPOTHESES</span>
+              </div>
+              <p className="diagnostic-network-note">These are pattern-based hypotheses from captured evidence, not guaranteed root causes. Open the matched log lines and compare them with the actual failure.</p>
+              {report.rootCauseHypotheses.map((diagnosis) => (
+                <article className="diagnostic-hypothesis" key={diagnosis.code}>
+                  <div className="diagnostic-hypothesis-top">
+                    <strong>{diagnosis.title}</strong>
+                    <span className={diagnosis.severity === "critical" ? "diagnostic-pill failed" : "diagnostic-pill warning"}>{diagnosis.confidence.toUpperCase()} CONFIDENCE</span>
+                  </div>
+                  <p>{diagnosis.likelyCause}</p>
+                  {diagnosis.evidence.length > 0 && <details><summary>Matched log lines ({diagnosis.evidence.length})</summary><pre>{diagnosis.evidence.join("\\n")}</pre></details>}
+                  <div className="diagnostic-recommendation"><b>Suggested next step:</b> {diagnosis.recommendedAction}</div>
+                </article>
+              ))}
+            </section>
+          )}
 
           <section className="panel diagnostic-section">
             <div className="panel-heading">
