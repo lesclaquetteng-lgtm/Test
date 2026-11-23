@@ -848,7 +848,7 @@ fn classify_crash_signatures(
         for line in &lines {
             if needles
                 .iter()
-                .any(|needle| line.to_ascii_lowercase().contains(needle))
+                .any(|needle| line.to_ascii_lowercase().contains(*needle))
             {
                 let excerpt = if line.len() > 500 {
                     line.chars().take(500).collect::<String>()
@@ -1718,13 +1718,15 @@ pub(crate) fn open_report_folder(data_root: &Path) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_java_major, redact_text, safe_id, safe_relative_path};
+    use super::{classify_crash_signatures, parse_java_major, redact_text, safe_id, safe_relative_path};
 
     #[test]
     fn redacts_sensitive_fields_and_bearer_tokens() {
-        let value = r#"accessToken="abc123" Authorization: Bearer xyz789 password=hello"#;
+        let value = r#"accessToken="abc123" idToken="id-secret" xstsToken="xsts-secret" Authorization: Bearer xyz789 password=hello"#;
         let redacted = redact_text(value);
         assert!(!redacted.contains("abc123"));
+        assert!(!redacted.contains("id-secret"));
+        assert!(!redacted.contains("xsts-secret"));
         assert!(!redacted.contains("xyz789"));
         assert!(!redacted.contains("hello"));
         assert!(redacted.contains("[REDACTED]"));
@@ -1738,6 +1740,20 @@ mod tests {
         assert!(safe_relative_path("../../outside.jar").is_none());
         assert!(safe_relative_path("C:/outside.jar").is_none());
         assert!(safe_relative_path("folder\\outside.jar").is_none());
+    }
+
+    #[test]
+    fn classifies_common_minecraft_crash_signatures_with_evidence() {
+        let logs = vec![
+            "java.lang.OutOfMemoryError: Java heap space".to_owned(),
+            "GLFW error 65542: WGL: The driver does not appear to support OpenGL".to_owned(),
+        ];
+        let diagnoses = classify_crash_signatures(&logs, &[], &[]);
+        assert_eq!(diagnoses.len(), 2);
+        assert!(diagnoses.iter().any(|item| item.code == "java.heap.exhausted"));
+        assert!(diagnoses.iter().any(|item| item.code == "graphics.opengl.failure"));
+        assert!(diagnoses.iter().all(|item| !item.evidence.is_empty()));
+        assert!(diagnoses.iter().all(|item| item.confidence == "medium"));
     }
 
     #[test]
