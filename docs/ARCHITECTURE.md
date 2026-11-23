@@ -38,18 +38,21 @@ Responsibilities:
 Planned modules:
 
 - runtime: Java discovery, compatibility and installation.
-- minecraft: official version manifest, metadata, libraries, assets, natives and launch arguments.
+- mojang: official version manifest, version metadata, release/snapshot catalogue, cache validation and the first Vanilla install pipeline.
+- minecraft: native archive extraction, Java compatibility, launch argument resolution and process lifecycle.
 - instances: instance manifests, paths, import/export and isolation.
-- downloads: bounded concurrency, progress, cancellation and integrity verification.
+- downloads: a reusable Rust transport with global/per-host concurrency bounds, SHA-1 streaming verification, a bounded progress channel, selective retries and rollback-safe publication. Cancellation and HTTP range resume are still pending.
+- natives: staged ZIP extraction for OS-specific native archives, with traversal/device-name/symlink protections, duplicate-path detection, bounded entry counts and decompressed-size ceilings.
 - accounts: Microsoft / Xbox / Minecraft authentication and secure token storage.
 - loaders: Fabric first, then Forge, NeoForge and Quilt.
 - content: Modrinth and CurseForge provider adapters, dependency and compatibility checks.
-- diagnostics: process lifecycle, log streaming and crash reports.
+- diagnostics: local hardware/runtime inventory, Java compatibility, instance integrity scans, bounded crash/log excerpts, common crash-signature triage with evidence/confidence labels, automatic reports and user-triggered export via the local reports folder.
 
 ## Data and filesystem boundaries
 
 - Use one application data directory for launcher metadata and caches.
 - Use one dedicated directory per managed instance.
+- Share immutable, SHA-1-addressed assets and verified libraries across instances; keep each version JSON/client JAR and install marker in its own instance directory.
 - Never infer an instance path from an untrusted display name.
 - Canonicalize and validate paths before destructive operations.
 - Reject archive entries that escape the intended extraction root.
@@ -102,4 +105,4 @@ API keys and service credentials must follow the provider's terms and must not b
 - UI tests for navigation, loading, empty, error and success states.
 - Windows smoke tests before distributing a release.
 
-The current project foundation only implements the desktop shell and Java/environment diagnostics. The modules above are design targets, not completed features.
+The current feature branch implements the desktop shell, native performance counters, a verified-download transport, official Mojang version discovery, a first Vanilla installation pipeline, launch argument resolution, Java major-version selection and native process lifecycle. The diagnostic engine inventories available Windows hardware data, examines Java candidates, verifies the client JAR, checks libraries/assets/native extraction, captures bounded sanitized logs and crash artifacts, and saves local JSON reports. Quick scans run on desktop startup; launch failures and abnormal process exits generate automatic reports. Deep scans hash all indexed asset objects and applicable libraries. Microsoft authentication, mod loaders, richer GPU telemetry and reproducible performance baselines remain roadmap work.

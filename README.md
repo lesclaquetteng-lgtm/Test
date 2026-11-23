@@ -4,7 +4,7 @@
 
 NOVA is an independent desktop launcher project. Its goal is to combine a polished, fast experience with reliable Minecraft installation, isolated instances, mod-loader support, modpack management, account security and actionable diagnostics.
 
-> Project status: early foundation. The current branch contains the desktop shell, navigation, a native Java/environment diagnostic command and the initial product/architecture plan. Minecraft installation and game launching are not implemented yet.
+> Project status: early development. The feature branch now includes the native desktop shell, Java diagnostics, performance telemetry, a verified concurrent downloader, the official Mojang version catalogue, a verified Vanilla installer, shared asset/library storage and guarded extraction of platform-native libraries. Game launching is not implemented yet.
 
 ## Current stack
 
@@ -12,6 +12,7 @@ NOVA is an independent desktop launcher project. Its goal is to combine a polish
 - **Native layer:** Rust
 - **Interface:** React + TypeScript + Vite
 - **Initial target:** Windows, with a cross-platform architecture
+- **Performance focus:** measurable native telemetry, bounded workloads, verified streaming downloads and low-overhead UI
 
 ## Requirements
 
@@ -65,7 +66,7 @@ Build the desktop application:
 5. Credentials and refresh tokens stay out of frontend storage and logs.
 6. No copied OneLauncher code or assets. NOVA is an independent implementation.
 
-See Product strategy in docs/PRODUCT_STRATEGY.md, Architecture in docs/ARCHITECTURE.md and Roadmap in docs/ROADMAP.md.
+See Product strategy in docs/PRODUCT_STRATEGY.md, Architecture in docs/ARCHITECTURE.md, Performance budgets in docs/PERFORMANCE_BUDGETS.md and Roadmap in docs/ROADMAP.md.
 
 ## License
 
