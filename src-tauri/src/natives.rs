@@ -61,14 +61,9 @@ fn safe_entry_path(raw: &str) -> Result<PathBuf, NativeError> {
                 "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$" | "CLOCK$"
             )
             || ["COM", "LPT"].iter().any(|prefix| {
-                device_stem
-                    .strip_prefix(prefix)
-                    .is_some_and(|suffix| {
-                        suffix.len() == 1
-                            && suffix
-                                .bytes()
-                                .all(|byte| (b'1'..=b'9').contains(&byte))
-                    })
+                device_stem.strip_prefix(prefix).is_some_and(|suffix| {
+                    suffix.len() == 1 && suffix.bytes().all(|byte| (b'1'..=b'9').contains(&byte))
+                })
             })
         {
             return Err(NativeError::UnsafePath);
