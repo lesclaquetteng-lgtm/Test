@@ -574,12 +574,17 @@ where
         } else {
             line
         };
+        let sanitized = crate::diagnostics::record_process_log(
+            &instance_id,
+            stream_name,
+            &bounded,
+        );
         let _ = app.emit(
             "nova-process-log",
             ProcessLogEvent {
                 instance_id: instance_id.clone(),
                 stream: stream_name.to_owned(),
-                line: bounded,
+                line: sanitized,
             },
         );
     }
@@ -752,6 +757,8 @@ pub(crate) async fn launch_instance(
 
     let monitor_app = app.clone();
     let monitor_id = instance_id.clone();
+    let diagnostic_data_root = data_root.clone();
+    let diagnostic_cache_root = cache_root.clone();
     tokio::spawn(async move {
         let status = tokio::select! {
             result = child.wait() => result,
@@ -783,6 +790,19 @@ pub(crate) async fn launch_instance(
                 Some(format!("Unable to monitor Minecraft process: {error}")),
             ),
         };
+        let abnormal_exit = state == "failed" || exit_code.is_some_and(|code| code != 0);
+        if abnormal_exit {
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            let _ = crate::diagnostics::run_report(
+                monitor_app.clone(),
+                diagnostic_data_root,
+                diagnostic_cache_root,
+                Some(monitor_id.clone()),
+                false,
+                "minecraft_process_abnormal_exit".to_owned(),
+            )
+            .await;
+        }
         if let Ok(mut active) = sessions().lock() {
             if active
                 .get(&monitor_id)
