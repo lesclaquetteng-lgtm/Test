@@ -6,8 +6,8 @@ use std::{
     collections::HashMap,
     path::{Path, PathBuf},
     sync::{
-        Arc, Mutex, OnceLock,
         atomic::{AtomicU64, Ordering},
+        Arc, Mutex, OnceLock,
     },
     time::{Duration, Instant},
 };
@@ -87,7 +87,9 @@ impl DownloadError {
     fn is_retryable(&self) -> bool {
         match self {
             Self::Request(error) => error.is_timeout() || error.is_connect() || error.is_body(),
-            Self::HttpStatus(status) => *status == 408 || *status == 429 || (500..=599).contains(status),
+            Self::HttpStatus(status) => {
+                *status == 408 || *status == 429 || (500..=599).contains(status)
+            },
             Self::SizeMismatch { .. } | Self::HashMismatch => true,
             _ => false,
         }
@@ -119,7 +121,9 @@ fn global_semaphore() -> Arc<Semaphore> {
 
 fn host_semaphore(host: &str) -> Arc<Semaphore> {
     let slots = HOST_SLOTS.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut slots = slots.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut slots = slots
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     slots
         .entry(host.to_owned())
         .or_insert_with(|| Arc::new(Semaphore::new(PER_HOST_DOWNLOAD_LIMIT)))
