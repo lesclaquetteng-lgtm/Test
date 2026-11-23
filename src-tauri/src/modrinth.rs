@@ -1089,7 +1089,9 @@ async fn install_modrinth_mod_inner(
         .loader
         .as_deref()
         .filter(|loader| matches!(*loader, "fabric" | "forge" | "neoforge"))
-        .ok_or_else(|| "Install Fabric, Forge or NeoForge on this instance before adding mods".to_owned())?;
+        .ok_or_else(|| {
+            "Install Fabric, Forge or NeoForge on this instance before adding mods".to_owned()
+        })?;
     let game_version = marker
         .game_version
         .clone()
@@ -1099,7 +1101,10 @@ async fn install_modrinth_mod_inner(
         .into_iter()
         .find(|version| {
             version.loaders.iter().any(|candidate| candidate == loader)
-                && version.game_versions.iter().any(|version| version == &game_version)
+                && version
+                    .game_versions
+                    .iter()
+                    .any(|version| version == &game_version)
         })
         .ok_or_else(|| {
             format!("No {loader} release of this project supports Minecraft {game_version}")
@@ -1653,14 +1658,17 @@ async fn install_modrinth_modpack_inner(
         return Err("Modrinth pack declares more than one mod loader; NOVA will not guess which runtime to install.".to_owned());
     }
 
-    let selected_loader: Option<(String, String)> = if let Some((kind, requested_version)) = declared_loaders.first() {
+    let selected_loader: Option<(String, String)> = if let Some((kind, requested_version)) =
+        declared_loaders.first()
+    {
         if !safe_identifier(requested_version) {
             return Err(format!("Modrinth pack specifies an invalid {kind} version"));
         }
         match *kind {
             "fabric-loader" => Some(("fabric".to_owned(), (*requested_version).clone())),
             "forge" | "neoforge" => {
-                let releases = loaders::list_loader_versions(game_version.clone(), (*kind).to_owned()).await?;
+                let releases =
+                    loaders::list_loader_versions(game_version.clone(), (*kind).to_owned()).await?;
                 let release = releases
                     .into_iter()
                     .find(|release| {
@@ -1683,12 +1691,19 @@ async fn install_modrinth_modpack_inner(
     if selected_loader.is_none()
         && index.files.iter().any(|entry| {
             entry.path.to_ascii_lowercase().starts_with("mods/")
-                && entry.env.as_ref()
+                && entry
+                    .env
+                    .as_ref()
                     .and_then(|environment| environment.get("client"))
-                    .is_none_or(|environment| !matches!(environment.as_str(), "optional" | "unsupported"))
+                    .is_none_or(|environment| {
+                        !matches!(environment.as_str(), "optional" | "unsupported")
+                    })
         })
     {
-        return Err("This pack contains client mods but does not declare Fabric, Forge or NeoForge.".to_owned());
+        return Err(
+            "This pack contains client mods but does not declare Fabric, Forge or NeoForge."
+                .to_owned(),
+        );
     }
 
     let pack_instance_id = format!("pack_{version_id}");
