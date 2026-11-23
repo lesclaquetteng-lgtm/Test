@@ -1,0 +1,47 @@
+name: NOVA Client CI
+
+on:
+  push:
+    branches: [main, "feat/**"]
+    paths:
+      - "nova-client/**"
+      - ".github/workflows/nova-client.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "nova-client/**"
+      - ".github/workflows/nova-client.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nova-client-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fabric-client:
+    name: Fabric 1.21.11 build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Build remapped client mod
+        working-directory: nova-client
+        run: ./gradlew --no-daemon clean build
+      - name: Upload remapped client JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: nova-client-fabric-1.21.11
+          path: nova-client/build/libs/nova-client-*.jar
+          if-no-files-found: error
+          retention-days: 14
