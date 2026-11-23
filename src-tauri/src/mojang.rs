@@ -124,6 +124,10 @@ pub(crate) struct InstalledInstance {
     pub modrinth_project_id: Option<String>,
     #[serde(default)]
     pub modrinth_version_id: Option<String>,
+    #[serde(default)]
+    pub memory_mb: Option<u32>,
+    #[serde(default)]
+    pub jvm_arguments: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -862,6 +866,8 @@ async fn install_vanilla_inner(
         display_name: Some(format!("Minecraft {version_id}")),
         modrinth_project_id: None,
         modrinth_version_id: None,
+        memory_mb: None,
+        jvm_arguments: None,
     };
     let marker = serde_json::to_vec_pretty(&installed)?;
     write_atomic(&instance_root.join(".nova-install.json"), &marker).await?;
