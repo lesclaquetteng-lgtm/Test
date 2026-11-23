@@ -1,7 +1,7 @@
 use serde::Serialize;
 use std::sync::{
-    OnceLock,
     atomic::{AtomicU64, Ordering},
+    OnceLock,
 };
 use std::time::Instant;
 
@@ -119,9 +119,15 @@ pub struct OperationGuard {
 impl Drop for OperationGuard {
     fn drop(&mut self) {
         let elapsed_nanos = self.started_at.elapsed().as_nanos().min(u64::MAX as u128) as u64;
-        self.monitor.total_operation_nanos.fetch_add(elapsed_nanos, Ordering::Relaxed);
-        self.monitor.completed_operations.fetch_add(1, Ordering::Relaxed);
-        self.monitor.active_operations.fetch_sub(1, Ordering::Relaxed);
+        self.monitor
+            .total_operation_nanos
+            .fetch_add(elapsed_nanos, Ordering::Relaxed);
+        self.monitor
+            .completed_operations
+            .fetch_add(1, Ordering::Relaxed);
+        self.monitor
+            .active_operations
+            .fetch_sub(1, Ordering::Relaxed);
     }
 }
 
