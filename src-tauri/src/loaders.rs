@@ -17,7 +17,8 @@ use tokio::{fs, process::Command};
 use url::Url;
 
 const FORGE_MAVEN: &str = "https://maven.minecraftforge.net";
-const FORGE_PROMOTIONS: &str = "https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json";
+const FORGE_PROMOTIONS: &str =
+    "https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json";
 const NEOFORGE_MAVEN: &str = "https://maven.neoforged.net/releases";
 const MAX_METADATA_BYTES: usize = 8 * 1024 * 1024;
 const MAX_INSTALLER_BYTES: u64 = 512 * 1024 * 1024;
@@ -75,7 +76,9 @@ async fn fetch_limited(raw_url: &str, limit: usize) -> Result<Vec<u8>, String> {
         || url.password().is_some()
         || url.fragment().is_some()
     {
-        return Err("Loader metadata and installers must use HTTPS without URL credentials".to_owned());
+        return Err(
+            "Loader metadata and installers must use HTTPS without URL credentials".to_owned(),
+        );
     }
     let response = client()?
         .get(url)
@@ -83,7 +86,10 @@ async fn fetch_limited(raw_url: &str, limit: usize) -> Result<Vec<u8>, String> {
         .await
         .map_err(|error| error.to_string())?;
     if !response.status().is_success() {
-        return Err(format!("Loader service returned HTTP {}", response.status()));
+        return Err(format!(
+            "Loader service returned HTTP {}",
+            response.status()
+        ));
     }
     if response
         .content_length()
@@ -136,7 +142,11 @@ fn version_key(value: &str) -> Vec<(u8, String)> {
         }
         let (kind, token) = if numeric == Some(true) {
             let normalized = current.trim_start_matches('0');
-            let normalized = if normalized.is_empty() { "0" } else { normalized };
+            let normalized = if normalized.is_empty() {
+                "0"
+            } else {
+                normalized
+            };
             let padded = format!("{:0>20}", normalized);
             (0, padded)
         } else {
@@ -190,9 +200,7 @@ pub(crate) struct LoaderRelease {
 
 fn forge_installer_url(game_version: &str, build: &str) -> String {
     let full = format!("{game_version}-{build}");
-    format!(
-        "{FORGE_MAVEN}/net/minecraftforge/forge/{full}/forge-{full}-installer.jar"
-    )
+    format!("{FORGE_MAVEN}/net/minecraftforge/forge/{full}/forge-{full}-installer.jar")
 }
 
 fn neoforge_artifact(game_version: &str, version: &str) -> (String, String, String) {
@@ -202,19 +210,11 @@ fn neoforge_artifact(game_version: &str, version: &str) -> (String, String, Stri
         } else {
             format!("1.20.1-{version}")
         };
-        let path = format!(
-            "net/neoforged/forge/{full}/forge-{full}-installer.jar"
-        );
+        let path = format!("net/neoforged/forge/{full}/forge-{full}-installer.jar");
         return (NEOFORGE_MAVEN.to_owned(), path, full);
     }
-    let path = format!(
-        "net/neoforged/neoforge/{version}/neoforge-{version}-installer.jar"
-    );
-    (
-        NEOFORGE_MAVEN.to_owned(),
-        path,
-        version.to_owned(),
-    )
+    let path = format!("net/neoforged/neoforge/{version}/neoforge-{version}-installer.jar");
+    (NEOFORGE_MAVEN.to_owned(), path, version.to_owned())
 }
 
 fn neoforge_prefix(game_version: &str) -> Option<String> {
@@ -241,7 +241,10 @@ fn neoforge_prefix(game_version: &str) -> Option<String> {
 }
 
 async fn list_forge(game_version: &str) -> Result<Vec<LoaderRelease>, String> {
-    let metadata = fetch_text(&format!("{FORGE_MAVEN}/net/minecraftforge/forge/maven-metadata.xml")).await?;
+    let metadata = fetch_text(&format!(
+        "{FORGE_MAVEN}/net/minecraftforge/forge/maven-metadata.xml"
+    ))
+    .await?;
     let prefix = format!("{game_version}-");
     let mut releases = Vec::new();
     for full in xml_versions(&metadata) {
@@ -259,10 +262,9 @@ async fn list_forge(game_version: &str) -> Result<Vec<LoaderRelease>, String> {
     }
 
     // The promotions manifest can name a supported build even if Maven metadata is briefly stale.
-    let promotions: Value = serde_json::from_slice(
-        &fetch_limited(FORGE_PROMOTIONS, MAX_METADATA_BYTES).await?,
-    )
-    .map_err(|error| format!("Forge promotions JSON is invalid: {error}"))?;
+    let promotions: Value =
+        serde_json::from_slice(&fetch_limited(FORGE_PROMOTIONS, MAX_METADATA_BYTES).await?)
+            .map_err(|error| format!("Forge promotions JSON is invalid: {error}"))?;
     if let Some(promos) = promotions.get("promos").and_then(Value::as_object) {
         for channel in ["recommended", "latest"] {
             if let Some(build) = promos
@@ -290,15 +292,14 @@ async fn list_forge(game_version: &str) -> Result<Vec<LoaderRelease>, String> {
 
 async fn list_neoforge(game_version: &str) -> Result<Vec<LoaderRelease>, String> {
     let (artifact, prefix) = if game_version == "1.20.1" {
-        (
-            "forge",
-            "1.20.1-".to_owned(),
-        )
+        ("forge", "1.20.1-".to_owned())
     } else {
         (
             "neoforge",
             neoforge_prefix(game_version).ok_or_else(|| {
-                format!("NOVA does not yet map NeoForge's version scheme for Minecraft {game_version}")
+                format!(
+                    "NOVA does not yet map NeoForge's version scheme for Minecraft {game_version}"
+                )
             })?,
         )
     };
@@ -308,7 +309,10 @@ async fn list_neoforge(game_version: &str) -> Result<Vec<LoaderRelease>, String>
     for version in xml_versions(&metadata) {
         if version.starts_with(&prefix) {
             let display = if game_version == "1.20.1" {
-                version.strip_prefix("1.20.1-").unwrap_or(&version).to_owned()
+                version
+                    .strip_prefix("1.20.1-")
+                    .unwrap_or(&version)
+                    .to_owned()
             } else {
                 version.clone()
             };
@@ -338,9 +342,15 @@ pub(crate) async fn list_loader_versions(
         "forge" => {
             if game_version.starts_with("1.") {
                 let parts = game_version.split('.').collect::<Vec<_>>();
-                let minor = parts.get(1).and_then(|value| value.parse::<u32>().ok()).unwrap_or(0);
+                let minor = parts
+                    .get(1)
+                    .and_then(|value| value.parse::<u32>().ok())
+                    .unwrap_or(0);
                 if minor < 13 {
-                    return Err("This Forge installer pipeline supports Minecraft 1.13 and newer only.".to_owned());
+                    return Err(
+                        "This Forge installer pipeline supports Minecraft 1.13 and newer only."
+                            .to_owned(),
+                    );
                 }
             }
             list_forge(&game_version).await
@@ -358,9 +368,9 @@ fn installer_artifact(
     match loader {
         "forge" => {
             let prefix = format!("{game_version}-");
-            let build = selected_version
-                .strip_prefix(&prefix)
-                .ok_or_else(|| "Selected Forge version does not match this Minecraft version".to_owned())?;
+            let build = selected_version.strip_prefix(&prefix).ok_or_else(|| {
+                "Selected Forge version does not match this Minecraft version".to_owned()
+            })?;
             if !safe_token(build) {
                 return Err("Invalid Forge installer version".to_owned());
             }
@@ -376,7 +386,10 @@ fn installer_artifact(
             if !safe_token(&full) || path.contains("..") {
                 return Err("Invalid NeoForge installer version".to_owned());
             }
-            Ok((format!("{base}/{path}"), path.rsplit('/').next().unwrap_or_default().to_owned()))
+            Ok((
+                format!("{base}/{path}"),
+                path.rsplit('/').next().unwrap_or_default().to_owned(),
+            ))
         }
         _ => Err("Unsupported mod loader".to_owned()),
     }
@@ -384,14 +397,21 @@ fn installer_artifact(
 
 fn profile_matches(value: &Value, game_version: &str, loader: &str) -> bool {
     let inherited = value.get("inheritsFrom").and_then(Value::as_str);
-    let main = value.get("mainClass").and_then(Value::as_str).unwrap_or_default();
+    let main = value
+        .get("mainClass")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
     let version_id = value.get("id").and_then(Value::as_str).unwrap_or_default();
     let lower = format!("{main} {version_id}").to_ascii_lowercase();
     inherited == Some(game_version)
         && !main.is_empty()
         && match loader {
             "forge" => lower.contains("forge") || lower.contains("fml"),
-            "neoforge" => lower.contains("forge") || lower.contains("neoforge") || lower.contains("bootstraplauncher"),
+            "neoforge" => {
+                lower.contains("forge")
+                    || lower.contains("neoforge")
+                    || lower.contains("bootstraplauncher")
+            }
             _ => false,
         }
 }
@@ -402,10 +422,21 @@ async fn find_loader_profile(
     loader: &str,
 ) -> Result<(String, PathBuf, Value), String> {
     let versions_root = instance_root.join("versions");
-    let mut entries = fs::read_dir(&versions_root).await.map_err(|error| error.to_string())?;
+    let mut entries = fs::read_dir(&versions_root)
+        .await
+        .map_err(|error| error.to_string())?;
     let mut matches = Vec::new();
-    while let Some(entry) = entries.next_entry().await.map_err(|error| error.to_string())? {
-        if !entry.file_type().await.map_err(|error| error.to_string())?.is_dir() {
+    while let Some(entry) = entries
+        .next_entry()
+        .await
+        .map_err(|error| error.to_string())?
+    {
+        if !entry
+            .file_type()
+            .await
+            .map_err(|error| error.to_string())?
+            .is_dir()
+        {
             continue;
         }
         let folder_name = entry.file_name().to_string_lossy().into_owned();
@@ -436,7 +467,12 @@ async fn find_loader_profile(
     })
 }
 
-fn merge_profile(base: &Value, loader_profile: &Value, profile_id: &str, game_version: &str) -> Result<Value, String> {
+fn merge_profile(
+    base: &Value,
+    loader_profile: &Value,
+    profile_id: &str,
+    game_version: &str,
+) -> Result<Value, String> {
     let mut merged = base.clone();
     merged["id"] = Value::String(profile_id.to_owned());
     merged["inheritsFrom"] = Value::String(game_version.to_owned());
@@ -453,10 +489,14 @@ fn merge_profile(base: &Value, loader_profile: &Value, profile_id: &str, game_ve
             .ok_or_else(|| format!("Loader profile has no {key} array"))?;
         if let Some(target) = merged[key].as_array_mut() {
             for addition in additions {
-                let name = addition.get("name").and_then(Value::as_str).unwrap_or_default();
-                if let Some(existing) = target.iter_mut().find(|item| {
-                    item.get("name").and_then(Value::as_str) == Some(name)
-                }) {
+                let name = addition
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                if let Some(existing) = target
+                    .iter_mut()
+                    .find(|item| item.get("name").and_then(Value::as_str) == Some(name))
+                {
                     *existing = addition.clone();
                 } else {
                     target.push(addition.clone());
@@ -483,24 +523,43 @@ fn merge_profile(base: &Value, loader_profile: &Value, profile_id: &str, game_ve
             }
         }
     }
-    if let Some(legacy) = loader_profile.get("minecraftArguments").and_then(Value::as_str) {
+    if let Some(legacy) = loader_profile
+        .get("minecraftArguments")
+        .and_then(Value::as_str)
+    {
         merged["minecraftArguments"] = Value::String(legacy.to_owned());
     }
     Ok(merged)
 }
 
 async fn write_json_atomic(path: &Path, value: &Value) -> Result<(), String> {
-    let parent = path.parent().ok_or_else(|| "Invalid loader metadata destination".to_owned())?;
-    fs::create_dir_all(parent).await.map_err(|error| error.to_string())?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| "Invalid loader metadata destination".to_owned())?;
+    fs::create_dir_all(parent)
+        .await
+        .map_err(|error| error.to_string())?;
     let bytes = serde_json::to_vec_pretty(value).map_err(|error| error.to_string())?;
     let temporary = path.with_extension("json.nova-tmp");
     let backup = path.with_extension("json.nova-backup");
-    fs::write(&temporary, bytes).await.map_err(|error| error.to_string())?;
-    if fs::try_exists(&backup).await.map_err(|error| error.to_string())? {
-        fs::remove_file(&backup).await.map_err(|error| error.to_string())?;
+    fs::write(&temporary, bytes)
+        .await
+        .map_err(|error| error.to_string())?;
+    if fs::try_exists(&backup)
+        .await
+        .map_err(|error| error.to_string())?
+    {
+        fs::remove_file(&backup)
+            .await
+            .map_err(|error| error.to_string())?;
     }
-    if fs::try_exists(path).await.map_err(|error| error.to_string())? {
-        fs::rename(path, &backup).await.map_err(|error| error.to_string())?;
+    if fs::try_exists(path)
+        .await
+        .map_err(|error| error.to_string())?
+    {
+        fs::rename(path, &backup)
+            .await
+            .map_err(|error| error.to_string())?;
         if let Err(error) = fs::rename(&temporary, path).await {
             let rollback = fs::rename(&backup, path).await;
             let _ = fs::remove_file(&temporary).await;
@@ -511,7 +570,9 @@ async fn write_json_atomic(path: &Path, value: &Value) -> Result<(), String> {
         }
         let _ = fs::remove_file(backup).await;
     } else {
-        fs::rename(&temporary, path).await.map_err(|error| error.to_string())?;
+        fs::rename(&temporary, path)
+            .await
+            .map_err(|error| error.to_string())?;
     }
     Ok(())
 }
@@ -521,23 +582,39 @@ async fn write_marker(root: &Path, marker: &InstalledInstance) -> Result<(), Str
     let destination = root.join(".nova-install.json");
     let temporary = root.join(".nova-install.json.new");
     let backup = root.join(".nova-install.json.backup");
-    fs::write(&temporary, bytes).await.map_err(|error| error.to_string())?;
-    if fs::try_exists(&backup).await.map_err(|error| error.to_string())? {
-        fs::remove_file(&backup).await.map_err(|error| error.to_string())?;
+    fs::write(&temporary, bytes)
+        .await
+        .map_err(|error| error.to_string())?;
+    if fs::try_exists(&backup)
+        .await
+        .map_err(|error| error.to_string())?
+    {
+        fs::remove_file(&backup)
+            .await
+            .map_err(|error| error.to_string())?;
     }
-    if fs::try_exists(&destination).await.map_err(|error| error.to_string())? {
-        fs::rename(&destination, &backup).await.map_err(|error| error.to_string())?;
+    if fs::try_exists(&destination)
+        .await
+        .map_err(|error| error.to_string())?
+    {
+        fs::rename(&destination, &backup)
+            .await
+            .map_err(|error| error.to_string())?;
         if let Err(error) = fs::rename(&temporary, &destination).await {
             let rollback = fs::rename(&backup, &destination).await;
             let _ = fs::remove_file(&temporary).await;
             if let Err(rollback_error) = rollback {
-                return Err(format!("Unable to publish loader marker ({error}); rollback failed ({rollback_error})"));
+                return Err(format!(
+                    "Unable to publish loader marker ({error}); rollback failed ({rollback_error})"
+                ));
             }
             return Err(error.to_string());
         }
         let _ = fs::remove_file(backup).await;
     } else {
-        fs::rename(&temporary, &destination).await.map_err(|error| error.to_string())?;
+        fs::rename(&temporary, &destination)
+            .await
+            .map_err(|error| error.to_string())?;
     }
     Ok(())
 }
@@ -552,16 +629,25 @@ fn copy_loader_libraries(source: &Path, destination: &Path) -> Result<usize, Str
     }
     let canonical_root = std::fs::canonicalize(source).map_err(|error| error.to_string())?;
     std::fs::create_dir_all(destination).map_err(|error| error.to_string())?;
-    fn visit(source: &Path, destination: &Path, canonical_root: &Path, files: &mut usize) -> Result<(), String> {
+    fn visit(
+        source: &Path,
+        destination: &Path,
+        canonical_root: &Path,
+        files: &mut usize,
+    ) -> Result<(), String> {
         for entry in std::fs::read_dir(source).map_err(|error| error.to_string())? {
             let entry = entry.map_err(|error| error.to_string())?;
             let source_path = entry.path();
             let destination_path = destination.join(entry.file_name());
             let kind = entry.file_type().map_err(|error| error.to_string())?;
             if kind.is_symlink() {
-                return Err(format!("Loader installer produced a symbolic link: {}", source_path.display()));
+                return Err(format!(
+                    "Loader installer produced a symbolic link: {}",
+                    source_path.display()
+                ));
             }
-            let canonical = std::fs::canonicalize(&source_path).map_err(|error| error.to_string())?;
+            let canonical =
+                std::fs::canonicalize(&source_path).map_err(|error| error.to_string())?;
             if !canonical.starts_with(canonical_root) {
                 return Err("A loader library resolves outside its installer directory".to_owned());
             }
@@ -569,14 +655,20 @@ fn copy_loader_libraries(source: &Path, destination: &Path) -> Result<usize, Str
                 std::fs::create_dir_all(&destination_path).map_err(|error| error.to_string())?;
                 visit(&source_path, &destination_path, canonical_root, files)?;
             } else if kind.is_file() {
-                let relative = canonical.strip_prefix(canonical_root).map_err(|error| error.to_string())?;
-                if relative.components().any(|part| !matches!(part, std::path::Component::Normal(_))) {
+                let relative = canonical
+                    .strip_prefix(canonical_root)
+                    .map_err(|error| error.to_string())?;
+                if relative
+                    .components()
+                    .any(|part| !matches!(part, std::path::Component::Normal(_)))
+                {
                     return Err("Loader library contains an unsafe relative path".to_owned());
                 }
                 if let Some(parent) = destination_path.parent() {
                     std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
                 }
-                std::fs::copy(&source_path, &destination_path).map_err(|error| error.to_string())?;
+                std::fs::copy(&source_path, &destination_path)
+                    .map_err(|error| error.to_string())?;
                 *files = files.saturating_add(1);
             } else {
                 return Err("Loader installer produced an unsupported file type".to_owned());
@@ -600,7 +692,9 @@ async fn download_installer(
         || !matches!(host, "maven.minecraftforge.net" | "maven.neoforged.net")
         || !filename.ends_with("-installer.jar")
     {
-        return Err("Refusing an installer URL outside the official Forge/NeoForge Maven hosts".to_owned());
+        return Err(
+            "Refusing an installer URL outside the official Forge/NeoForge Maven hosts".to_owned(),
+        );
     }
     let checksum_bytes = fetch_limited(&format!("{url}.sha1"), 512).await?;
     let checksum = String::from_utf8(checksum_bytes)
@@ -665,7 +759,10 @@ pub(crate) async fn install_loader_inner(
     if marker.loader.is_some() && !allow_existing_loader {
         return Err("This instance already has a mod loader. Remove or recreate the profile before switching loaders.".to_owned());
     }
-    let game_version = marker.game_version.clone().unwrap_or_else(|| marker.id.clone());
+    let game_version = marker
+        .game_version
+        .clone()
+        .unwrap_or_else(|| marker.id.clone());
     if !supported_minecraft_version(&game_version) || !safe_token(selected_version) {
         return Err("Invalid Minecraft or loader version".to_owned());
     }
@@ -674,16 +771,21 @@ pub(crate) async fn install_loader_inner(
         "neoforge" => list_neoforge(&game_version).await?,
         _ => return Err("Unsupported mod loader".to_owned()),
     };
-    if !releases.iter().any(|release| release.version == selected_version) {
-        return Err("The selected loader build is not published for this Minecraft version".to_owned());
+    if !releases
+        .iter()
+        .any(|release| release.version == selected_version)
+    {
+        return Err(
+            "The selected loader build is not published for this Minecraft version".to_owned(),
+        );
     }
     let base_metadata_path = instance_root
         .join("versions")
         .join(&game_version)
         .join(format!("{game_version}.json"));
-    let base_metadata_bytes = fs::read(&base_metadata_path)
-        .await
-        .map_err(|_| "The base Minecraft profile is missing. Repair the Vanilla instance first.".to_owned())?;
+    let base_metadata_bytes = fs::read(&base_metadata_path).await.map_err(|_| {
+        "The base Minecraft profile is missing. Repair the Vanilla instance first.".to_owned()
+    })?;
     let base_metadata: Value = serde_json::from_slice(&base_metadata_bytes)
         .map_err(|error| format!("Base Minecraft metadata is invalid: {error}"))?;
     if base_metadata.get("id").and_then(Value::as_str) != Some(game_version.as_str()) {
@@ -700,7 +802,10 @@ pub(crate) async fn install_loader_inner(
     let (installer_url, filename) = installer_artifact(loader, &game_version, selected_version)?;
     let installer = download_installer(cache_root, &installer_url, &filename).await?;
     let launcher_profiles = instance_root.join("launcher_profiles.json");
-    if !fs::try_exists(&launcher_profiles).await.map_err(|error| error.to_string())? {
+    if !fs::try_exists(&launcher_profiles)
+        .await
+        .map_err(|error| error.to_string())?
+    {
         fs::write(&launcher_profiles, br#"{"profiles":{},"settings":{}}"#)
             .await
             .map_err(|error| error.to_string())?;
@@ -718,11 +823,18 @@ pub(crate) async fn install_loader_inner(
     let output = tokio::time::timeout(INSTALLER_TIMEOUT, command.output())
         .await
         .map_err(|_| "The loader installer exceeded NOVA's 20-minute time limit".to_owned())?
-        .map_err(|error| format!("Unable to execute the {loader} installer with Java {java_major}: {error}"))?;
+        .map_err(|error| {
+            format!("Unable to execute the {loader} installer with Java {java_major}: {error}")
+        })?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let diagnostic = stderr.lines().chain(stdout.lines()).rev().take(18).collect::<Vec<_>>();
+        let diagnostic = stderr
+            .lines()
+            .chain(stdout.lines())
+            .rev()
+            .take(18)
+            .collect::<Vec<_>>();
         return Err(format!(
             "{loader} installer failed with exit code {:?}: {}",
             output.status.code(),
@@ -777,9 +889,23 @@ pub(crate) async fn install_loader(
     if launch::is_instance_running(&instance_id)? {
         return Err("Stop Minecraft before installing a loader".to_owned());
     }
-    let data_root = app.path().app_data_dir().map_err(|error| error.to_string())?;
-    let cache_root = app.path().app_cache_dir().map_err(|error| error.to_string())?;
-    install_loader_inner(&data_root, &cache_root, &instance_id, &loader, &version, false).await
+    let data_root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let cache_root = app
+        .path()
+        .app_cache_dir()
+        .map_err(|error| error.to_string())?;
+    install_loader_inner(
+        &data_root,
+        &cache_root,
+        &instance_id,
+        &loader,
+        &version,
+        false,
+    )
+    .await
 }
 
 #[tauri::command]
