@@ -3,6 +3,7 @@ use std::{env, path::PathBuf, process::Command};
 use tauri::{Emitter, Manager};
 
 pub(crate) mod downloader;
+pub(crate) mod diagnostics;
 pub(crate) mod launch;
 pub(crate) mod mojang;
 pub(crate) mod natives;
@@ -149,15 +150,61 @@ async fn launch_minecraft(
         .path()
         .app_cache_dir()
         .map_err(|error| format!("Unable to resolve NOVA cache directory: {error}"))?;
-    launch::launch_instance(
+    let result = launch::launch_instance(
+        app.clone(),
+        data_root.clone(),
+        cache_root.clone(),
+        instance_id.clone(),
+        player_name,
+        memory_mb,
+    )
+    .await;
+    if result.is_err() {
+        let _ = diagnostics::run_report(
+            app,
+            data_root,
+            cache_root,
+            Some(instance_id),
+            false,
+            "launch_preflight_failure".to_owned(),
+        )
+        .await;
+    }
+    result
+}
+
+#[tauri::command]
+async fn run_diagnostics(
+    app: tauri::AppHandle,
+    instance_id: Option<String>,
+    deep: bool,
+) -> Result<diagnostics::DiagnosticReport, String> {
+    let data_root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Unable to resolve NOVA data directory: {error}"))?;
+    let cache_root = app
+        .path()
+        .app_cache_dir()
+        .map_err(|error| format!("Unable to resolve NOVA cache directory: {error}"))?;
+    diagnostics::run_report(
         app,
         data_root,
         cache_root,
         instance_id,
-        player_name,
-        memory_mb,
+        deep,
+        if deep { "manual_deep_scan" } else { "manual_quick_scan" }.to_owned(),
     )
     .await
+}
+
+#[tauri::command]
+fn open_diagnostics_folder(app: tauri::AppHandle) -> Result<(), String> {
+    let data_root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Unable to resolve NOVA data directory: {error}"))?;
+    diagnostics::open_report_folder(&data_root)
 }
 
 #[tauri::command]
@@ -180,6 +227,8 @@ pub fn run() {
             list_installed_instances,
             install_vanilla_version,
             launch_minecraft,
+            run_diagnostics,
+            open_diagnostics_folder,
             list_launch_sessions,
             stop_minecraft
         ])
