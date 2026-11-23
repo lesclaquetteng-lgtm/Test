@@ -450,8 +450,10 @@ function HomePage({
   }, [isDesktop]);
 
   const selected = instances.find((instance) => instance.id === selectedId) ?? instances[0] ?? null;
-  const featuredVersion = selected?.id ?? catalog?.latest.release ?? "Minecraft";
-  const featuredType = selected?.versionType ?? "Java Edition";
+  const featuredVersion = selected?.displayName || selected?.id || catalog?.latest.release || "Minecraft";
+  const featuredType = selected?.loader
+    ? selected.loader + " " + (selected.loaderVersion || "")
+    : selected?.versionType ?? "Java Edition";
 
   const launch = async () => {
     if (!isDesktop) {
@@ -598,8 +600,8 @@ function HomePage({
                   <span className="nova-version-badge">{instance.versionType}</span>
                 </span>
                 <span className="nova-version-card-copy">
-                  <strong>{instance.id}</strong>
-                  <small>{formatBytes(instance.totalBytes)} · {instance.files} verified files</small>
+                  <strong>{instance.displayName || instance.id}</strong>
+                  <small>{instance.gameVersion || instance.id} · {instance.loader || instance.versionType} · {formatBytes(instance.totalBytes)}</small>
                 </span>
                 <span className="nova-card-arrow"><ArrowRight size={15} /></span>
               </button>
@@ -976,8 +978,8 @@ function InstancesPage({ isDesktop, playerName, setPlayerName, memoryMb, setMemo
             {instances.map((instance) => (
               <article className="instance-card" key={instance.id}>
                 <div className="instance-card-top">
-                  <strong>{instance.id}</strong>
-                  <span className="instance-type">{instance.versionType}</span>
+                  <strong>{instance.displayName || instance.id}</strong>
+                  <span className="instance-type">{instance.loader ? instance.loader + " " + (instance.loaderVersion || "") : instance.versionType}</span>
                 </div>
                 <div className="instance-card-meta">
                   <span>{formatBytes(instance.totalBytes)}</span>
