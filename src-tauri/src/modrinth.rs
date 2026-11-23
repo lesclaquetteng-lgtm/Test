@@ -380,8 +380,36 @@ struct FabricArtifact {
     name: String,
     path: String,
     url: String,
-    sha1: String,
+    sha1: Option<String>,
     size: Option<u64>,
+}
+
+fn trusted_fabric_repository(host: &str) -> bool {
+    matches!(
+        host.to_ascii_lowercase().as_str(),
+        "maven.fabricmc.net"
+            | "libraries.minecraft.net"
+            | "repo1.maven.org"
+            | "repo.maven.apache.org"
+    )
+}
+
+fn validate_fabric_artifact_url(raw: &str, name: &str) -> Result<String, String> {
+    let url = Url::parse(raw).map_err(|error| {
+        format!("Fabric library {name} has an invalid Maven URL: {error}")
+    })?;
+    let host = url.host_str().unwrap_or_default();
+    if url.scheme() != "https"
+        || !trusted_fabric_repository(host)
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(format!(
+            "Fabric library {name} uses an untrusted or insecure Maven repository"
+        ));
+    }
+    Ok(url.to_string())
 }
 
 fn maven_path(coordinate: &str) -> Result<String, String> {
@@ -432,22 +460,24 @@ fn fabric_artifact(library: &Value) -> Result<FabricArtifact, String> {
             .get("sha1")
             .and_then(Value::as_str)
             .or_else(|| library.get("sha1").and_then(Value::as_str))
-            .ok_or_else(|| format!("Fabric library {name} has no SHA-1 checksum"))?;
+            .map(|value| {
+                if valid_sha1(value) {
+                    Ok(value.to_ascii_lowercase())
+                } else {
+                    Err(format!("Fabric library {name} has an invalid SHA-1 checksum"))
+                }
+            })
+            .transpose()?;
         let size = artifact
             .get("size")
             .and_then(Value::as_u64)
             .or_else(|| library.get("size").and_then(Value::as_u64));
         safe_relative_path(path)?;
-        if !valid_sha1(sha1) {
-            return Err(format!(
-                "Fabric library {name} has an invalid SHA-1 checksum"
-            ));
-        }
         return Ok(FabricArtifact {
-            name,
+            name: name.clone(),
             path: path.to_owned(),
-            url: url.to_owned(),
-            sha1: sha1.to_ascii_lowercase(),
+            url: validate_fabric_artifact_url(url, &name)?,
+            sha1,
             size,
         });
     }
@@ -456,29 +486,30 @@ fn fabric_artifact(library: &Value) -> Result<FabricArtifact, String> {
     let sha1 = library
         .get("sha1")
         .and_then(Value::as_str)
-        .or_else(|| {
-            library
-                .get("checksums")
-                .and_then(Value::as_array)
-                .and_then(|values| values.iter().find_map(Value::as_str))
+        .map(|value| {
+            if valid_sha1(value) {
+                Ok(value.to_ascii_lowercase())
+            } else {
+                Err(format!("Fabric library {name} has an invalid SHA-1 checksum"))
+            }
         })
-        .ok_or_else(|| format!("Fabric library {name} has no SHA-1 checksum"))?;
-    if !valid_sha1(sha1) {
-        return Err(format!(
-            "Fabric library {name} has an invalid SHA-1 checksum"
-        ));
-    }
+        .transpose()?;
     let base = library
         .get("url")
         .and_then(Value::as_str)
         .unwrap_or("https://maven.fabricmc.net/");
-    let base = Url::parse(base).map_err(|error| error.to_string())?;
-    if base.scheme() != "https" || base.host_str().is_none() {
+    let mut url = Url::parse(base).map_err(|error| error.to_string())?;
+    if url.scheme() != "https"
+        || !url.host_str().is_some_and(trusted_fabric_repository)
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
         return Err(format!(
-            "Fabric library {name} uses an unsafe Maven repository"
+            "Fabric library {name} uses an unsafe or untrusted Maven repository"
         ));
     }
-    let mut url = base;
     {
         let mut segments = url
             .path_segments_mut()
@@ -491,10 +522,36 @@ fn fabric_artifact(library: &Value) -> Result<FabricArtifact, String> {
     Ok(FabricArtifact {
         name,
         path,
-        url: url.to_string(),
-        sha1: sha1.to_ascii_lowercase(),
+        url: validate_fabric_artifact_url(url.as_str(), &name)?,
+        sha1,
         size: library.get("size").and_then(Value::as_u64),
     })
+}
+
+async fn resolve_fabric_artifact_sha1(artifact: &FabricArtifact) -> Result<String, String> {
+    if let Some(sha1) = artifact.sha1.as_deref() {
+        return Ok(sha1.to_owned());
+    }
+    let checksum_url = format!("{}.sha1", artifact.url);
+    let bytes = fetch_limited(&checksum_url, 512).await.map_err(|error| {
+        format!(
+            "Fabric library {} has no embedded SHA-1 and its Maven checksum could not be fetched: {error}",
+            artifact.name
+        )
+    })?;
+    let checksum_text = String::from_utf8(bytes)
+        .map_err(|_| format!("Fabric library {} returned a non-text SHA-1 checksum", artifact.name))?;
+    let value = checksum_text
+        .split_whitespace()
+        .next()
+        .ok_or_else(|| format!("Fabric library {} returned an empty SHA-1 checksum", artifact.name))?;
+    if !valid_sha1(value) {
+        return Err(format!(
+            "Fabric library {} returned an invalid Maven SHA-1 checksum",
+            artifact.name
+        ));
+    }
+    Ok(value.to_ascii_lowercase())
 }
 
 async fn read_instance_marker(
@@ -677,11 +734,12 @@ async fn install_fabric_loader_inner(
         }
         let relative = safe_relative_path(&artifact.path)?;
         let destination = libraries_root.join(relative);
+        let expected_sha1 = resolve_fabric_artifact_sha1(&artifact).await?;
         let outcome = download_verified(
             DownloadSpec {
                 url: artifact.url.clone(),
                 destination,
-                expected_sha1: artifact.sha1.clone(),
+                expected_sha1: expected_sha1.clone(),
                 expected_size: artifact.size,
             },
             None,
@@ -700,7 +758,7 @@ async fn install_fabric_loader_inner(
                 "artifact": {
                     "path": artifact.path,
                     "url": artifact.url,
-                    "sha1": artifact.sha1,
+                    "sha1": expected_sha1,
                     "size": outcome.bytes
                 }
             }
