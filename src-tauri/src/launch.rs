@@ -670,11 +670,17 @@ pub(crate) async fn launch_instance(
                     .join(format!("{game_version}.json")),
             )
         })
-        .map_err(|_| "Minecraft version metadata is missing. Repair this instance before launching.".to_owned())?;
+        .map_err(|_| {
+            "Minecraft version metadata is missing. Repair this instance before launching."
+                .to_owned()
+        })?;
     let metadata: Value = serde_json::from_slice(&metadata_bytes)
         .map_err(|error| format!("Official version metadata is invalid: {error}"))?;
     if metadata.get("id").and_then(Value::as_str) != Some(game_version) {
-        return Err("Minecraft version metadata does not match this instance's base game version".to_owned());
+        return Err(
+            "Minecraft version metadata does not match this instance's base game version"
+                .to_owned(),
+        );
     }
     let required_java = metadata
         .get("javaVersion")
