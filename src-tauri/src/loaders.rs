@@ -288,7 +288,6 @@ async fn list_forge(game_version: &str) -> Result<Vec<LoaderRelease>, String> {
         }
     }
     sort_releases(&mut releases);
-    releases.truncate(40);
     Ok(releases)
 }
 
@@ -920,7 +919,9 @@ pub(crate) async fn list_loader_versions_command(
 
 #[cfg(test)]
 mod tests {
-    use super::{is_stable, neoforge_prefix, supported_minecraft_version, xml_versions};
+    use super::{
+        is_stable, neoforge_prefix, supported_minecraft_version, version_key, xml_versions,
+    };
 
     #[test]
     fn parses_maven_version_entries_and_stable_channels() {
@@ -936,6 +937,13 @@ mod tests {
         assert_eq!(neoforge_prefix("1.20.4").as_deref(), Some("20.4."));
         assert_eq!(neoforge_prefix("1.20.1").as_deref(), Some("20.1."));
         assert_eq!(neoforge_prefix("26.1.2").as_deref(), Some("26.1.2."));
+    }
+
+    #[test]
+    fn sorts_numeric_loader_builds_by_numeric_value() {
+        assert!(version_key("21.1.10") > version_key("21.1.9"));
+        assert!(version_key("47.4.0") > version_key("47.3.10"));
+        assert!(version_key("47.3.10") > version_key("47.3.9"));
     }
 
     #[test]
