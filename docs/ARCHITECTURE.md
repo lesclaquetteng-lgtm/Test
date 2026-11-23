@@ -46,7 +46,7 @@ Planned modules:
 - accounts: Microsoft / Xbox / Minecraft authentication and secure token storage.
 - loaders: Fabric first, then Forge, NeoForge and Quilt.
 - content: Modrinth and CurseForge provider adapters, dependency and compatibility checks.
-- diagnostics: local hardware/runtime inventory, Java compatibility, instance integrity scans, bounded crash/log excerpts, automatic reports and user-triggered exports via the local reports folder.
+- diagnostics: local hardware/runtime inventory, Java compatibility, instance integrity scans, bounded crash/log excerpts, common crash-signature triage with evidence/confidence labels, automatic reports and user-triggered export via the local reports folder.
 
 ## Data and filesystem boundaries
 
