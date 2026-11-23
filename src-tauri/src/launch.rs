@@ -523,7 +523,8 @@ fn build_launch_arguments(
         };
         let relative = safe_relative_path(path)?;
         let mut resolved = None;
-        for root in [&libraries_root, &instance_root.join("libraries")] {
+        let instance_libraries_root = instance_root.join("libraries");
+        for root in [&libraries_root, &instance_libraries_root] {
             if !root.exists() {
                 continue;
             }
