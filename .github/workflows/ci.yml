@@ -33,6 +33,31 @@ jobs:
       - name: Type-check and build
         run: npm run build
 
+  native-windows:
+    name: Native Windows compile check
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install frontend dependencies
+        run: npm install
+
+      - name: Build frontend assets
+        run: npm run build
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Compile native Tauri application
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
   rust-format:
     name: Rust formatting
     runs-on: ubuntu-latest
