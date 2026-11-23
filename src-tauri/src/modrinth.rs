@@ -7,12 +7,14 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha1::{Digest as Sha1Digest, Sha1};
+use sha2::Sha512;
 use std::{
     collections::HashSet,
     path::{Component, Path, PathBuf},
     sync::OnceLock,
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
+use std::io::Read;
 use tokio::{fs, sync::mpsc};
 use tauri::Manager;
 use url::Url;
@@ -137,6 +139,8 @@ pub(crate) struct ModrinthProject {
     pub versions: Vec<String>,
     #[serde(default)]
     pub date_modified: Option<String>,
+    #[serde(default)]
+    pub latest_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -903,6 +907,478 @@ pub(crate) async fn remove_instance_mod(
     }
     fs::remove_file(path).await.map_err(|error| error.to_string())
 }
+
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MrPackIndex {
+    format_version: u32,
+    game: String,
+    version_id: String,
+    name: String,
+    #[serde(default)]
+    summary: Option<String>,
+    files: Vec<MrPackFile>,
+    dependencies: std::collections::HashMap<String, String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MrPackFile {
+    path: String,
+    hashes: std::collections::HashMap<String, String>,
+    #[serde(default)]
+    env: Option<std::collections::HashMap<String, String>>,
+    downloads: Vec<String>,
+    file_size: u64,
+}
+
+fn safe_modpack_url(raw: &str) -> Result<String, String> {
+    let url = Url::parse(raw).map_err(|_| "Modrinth pack contains an invalid file URL".to_owned())?;
+    let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
+    let trusted = host == "cdn.modrinth.com"
+        || host == "github.com"
+        || host == "raw.githubusercontent.com"
+        || host == "gitlab.com"
+        || host.ends_with(".gitlab.com");
+    if url.scheme() != "https"
+        || !trusted
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(format!("Modrinth pack contains a download URL from an untrusted host: {host}"));
+    }
+    Ok(url.to_string())
+}
+
+fn sha512_file(path: &Path) -> Result<String, String> {
+    let mut file = std::fs::File::open(path).map_err(|error| error.to_string())?;
+    let mut digest = Sha512::new();
+    let mut buffer = [0_u8; 128 * 1024];
+    loop {
+        let read = file.read(&mut buffer).map_err(|error| error.to_string())?;
+        if read == 0 {
+            break;
+        }
+        Sha1Digest::update(&mut digest, &buffer[..read]);
+    }
+    Ok(digest
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect())
+}
+
+async fn verify_sha512(path: PathBuf, expected: String) -> Result<(), String> {
+    let actual = tokio::task::spawn_blocking(move || sha512_file(&path))
+        .await
+        .map_err(|error| format!("SHA-512 verification worker failed: {error}"))??;
+    if !actual.eq_ignore_ascii_case(&expected) {
+        return Err("Modrinth file failed SHA-512 verification".to_owned());
+    }
+    Ok(())
+}
+
+fn read_mrpack_index(archive_path: &Path) -> Result<MrPackIndex, String> {
+    let file = std::fs::File::open(archive_path).map_err(|error| error.to_string())?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|error| format!("Invalid Modrinth .mrpack archive: {error}"))?;
+    let mut manifest = archive
+        .by_name("modrinth.index.json")
+        .map_err(|_| "Modrinth pack is missing modrinth.index.json".to_owned())?;
+    if manifest.size() > 16 * 1024 * 1024 {
+        return Err("Modrinth pack manifest is too large".to_owned());
+    }
+    let mut bytes = Vec::with_capacity(manifest.size() as usize);
+    manifest
+        .read_to_end(&mut bytes)
+        .map_err(|error| error.to_string())?;
+    serde_json::from_slice(&bytes).map_err(|error| format!("Invalid Modrinth pack manifest: {error}"))
+}
+
+fn extract_mrpack_overrides(archive_path: &Path, instance_root: &Path) -> Result<(usize, u64), String> {
+    const MAX_OVERRIDE_FILE: u64 = 256 * 1024 * 1024;
+    const MAX_TOTAL_OVERRIDE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+    let file = std::fs::File::open(archive_path).map_err(|error| error.to_string())?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|error| format!("Invalid Modrinth .mrpack archive: {error}"))?;
+    let mut copied_files = 0_usize;
+    let mut copied_bytes = 0_u64;
+
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index).map_err(|error| error.to_string())?;
+        if entry.is_dir() {
+            continue;
+        }
+        let archive_name = entry.name().replace('\\', "/");
+        let relative_name = archive_name
+            .strip_prefix("overrides/")
+            .or_else(|| archive_name.strip_prefix("client-overrides/"));
+        let Some(relative_name) = relative_name else {
+            continue;
+        };
+        let relative = safe_relative_path(relative_name)?;
+        let file_size = entry.size();
+        if file_size > MAX_OVERRIDE_FILE
+            || copied_bytes.saturating_add(file_size) > MAX_TOTAL_OVERRIDE_BYTES
+        {
+            return Err("Modrinth pack overrides exceed NOVA's extraction size limit".to_owned());
+        }
+        if entry
+            .unix_mode()
+            .is_some_and(|mode| mode & 0o170000 == 0o120000)
+        {
+            return Err("Modrinth pack contains a symbolic link; extraction was stopped".to_owned());
+        }
+
+        let destination = instance_root.join(relative);
+        let parent = destination
+            .parent()
+            .ok_or_else(|| "Invalid Modrinth override destination".to_owned())?;
+        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        let temporary = destination.with_extension("nova-tmp");
+        let mut output = std::fs::File::create(&temporary).map_err(|error| error.to_string())?;
+        let copied = std::io::copy(&mut entry, &mut output).map_err(|error| error.to_string())?;
+        if copied != file_size {
+            let _ = std::fs::remove_file(&temporary);
+            return Err("Modrinth override size changed during extraction".to_owned());
+        }
+        std::fs::rename(&temporary, &destination).map_err(|error| error.to_string())?;
+        copied_files += 1;
+        copied_bytes = copied_bytes.saturating_add(copied);
+    }
+    Ok((copied_files, copied_bytes))
+}
+
+fn copy_directory(source: &Path, destination: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(destination).map_err(|error| error.to_string())?;
+    for entry in std::fs::read_dir(source).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let file_type = entry.file_type().map_err(|error| error.to_string())?;
+        if file_type.is_symlink() {
+            return Err("Refusing to copy a symbolic link from a Minecraft base instance".to_owned());
+        }
+        let target = destination.join(entry.file_name());
+        if file_type.is_dir() {
+            copy_directory(&entry.path(), &target)?;
+        } else if file_type.is_file() {
+            std::fs::copy(entry.path(), target).map_err(|error| error.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+async fn ensure_pack_instance_base(
+    data_root: &Path,
+    cache_root: &Path,
+    pack_instance_id: &str,
+    game_version: &str,
+    pack_name: &str,
+    project_id: &str,
+    pack_version_id: &str,
+) -> Result<InstalledInstance, String> {
+    if !safe_identifier(pack_instance_id) || !safe_identifier(game_version) {
+        return Err("Invalid Minecraft or modpack instance identifier".to_owned());
+    }
+    let source_root = data_root.join("instances").join(game_version);
+    let source_marker = source_root.join(".nova-install.json");
+    if !fs::try_exists(&source_marker).await.map_err(|error| error.to_string())? {
+        mojang::install_vanilla(data_root, cache_root, game_version, None).await?;
+    }
+
+    let source_bytes = fs::read(&source_marker).await.map_err(|error| error.to_string())?;
+    let mut marker: InstalledInstance = serde_json::from_slice(&source_bytes)
+        .map_err(|error| format!("Vanilla base instance marker is invalid: {error}"))?;
+    if marker.id != game_version || !valid_sha1(&marker.client_sha1) {
+        return Err("Vanilla base instance does not match this modpack's Minecraft version".to_owned());
+    }
+
+    let instance_root = data_root.join("instances").join(pack_instance_id);
+    if fs::try_exists(&instance_root).await.map_err(|error| error.to_string())? {
+        return Err(format!("A NOVA instance named {pack_instance_id} already exists"));
+    }
+    let game_version_root = instance_root.join("versions").join(game_version);
+    fs::create_dir_all(&game_version_root).await.map_err(|error| error.to_string())?;
+
+    let source_version_root = source_root.join("versions").join(game_version);
+    let source_client = source_version_root.join(format!("{game_version}.jar"));
+    let target_client = game_version_root.join(format!("{game_version}.jar"));
+    fs::copy(&source_client, &target_client)
+        .await
+        .map_err(|error| format!("Unable to copy the verified Minecraft client: {error}"))?;
+
+    let cached_metadata = cache_root
+        .join("mojang")
+        .join("versions")
+        .join(format!("{game_version}.json"));
+    let source_metadata = source_version_root.join(format!("{game_version}.json"));
+    let metadata_source = if fs::try_exists(&cached_metadata).await.unwrap_or(false) {
+        cached_metadata
+    } else {
+        source_metadata
+    };
+    fs::copy(metadata_source, game_version_root.join(format!("{game_version}.json")))
+        .await
+        .map_err(|error| format!("Unable to copy Minecraft version metadata: {error}"))?;
+
+    let source_natives = source_root.join("natives");
+    let target_natives = instance_root.join("natives");
+    let source_natives_for_copy = source_natives.clone();
+    let target_natives_for_copy = target_natives.clone();
+    tokio::task::spawn_blocking(move || copy_directory(&source_natives_for_copy, &target_natives_for_copy))
+        .await
+        .map_err(|error| format!("Native library copy worker failed: {error}"))??;
+
+    marker.id = pack_instance_id.to_owned();
+    marker.game_version = Some(game_version.to_owned());
+    marker.loader = None;
+    marker.loader_version = None;
+    marker.instance_type = Some("modpack".to_owned());
+    marker.display_name = Some(pack_name.to_owned());
+    marker.modrinth_project_id = Some(project_id.to_owned());
+    marker.modrinth_version_id = Some(pack_version_id.to_owned());
+    marker.instance_path = instance_root.to_string_lossy().into_owned();
+    marker.installed_at_unix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    write_instance_marker(&instance_root, &marker).await?;
+    Ok(marker)
+}
+
+async fn install_modrinth_modpack_inner(
+    data_root: &Path,
+    cache_root: &Path,
+    project_id: &str,
+    version_id: &str,
+    progress: Option<mpsc::Sender<InstallProgress>>,
+) -> Result<InstalledInstance, String> {
+    if !safe_identifier(project_id) || !safe_identifier(version_id) {
+        return Err("Invalid Modrinth project or version identifier".to_owned());
+    }
+    let versions = get_project_versions(project_id, None, None).await?;
+    let version = versions
+        .into_iter()
+        .find(|candidate| candidate.id == version_id)
+        .ok_or_else(|| "The selected Modrinth modpack version no longer exists".to_owned())?;
+    let file = version.files
+        .iter()
+        .find(|file| file.primary && file.filename.to_ascii_lowercase().ends_with(".mrpack"))
+        .or_else(|| version.files.iter().find(|file| file.filename.to_ascii_lowercase().ends_with(".mrpack")))
+        .ok_or_else(|| "This Modrinth project version does not provide a .mrpack file".to_owned())?;
+
+    if file.size == 0 || file.size > 300 * 1024 * 1024 {
+        return Err("Modrinth pack archive exceeds NOVA's 300 MB safety limit".to_owned());
+    }
+    let archive_sha1 = file.hashes.sha1.as_deref()
+        .filter(|value| valid_sha1(value))
+        .ok_or_else(|| "Modrinth did not provide a valid SHA-1 hash for this pack archive".to_owned())?;
+    let archive_sha512 = file.hashes.sha512.clone()
+        .filter(|value| value.len() == 128 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
+        .ok_or_else(|| "Modrinth did not provide a valid SHA-512 hash for this pack archive".to_owned())?;
+    let archive_url = safe_modpack_url(&file.url)?;
+
+    let archive_path = cache_root
+        .join("modrinth")
+        .join("packs")
+        .join(format!("{version_id}.mrpack"));
+    fs::create_dir_all(archive_path.parent().unwrap())
+        .await
+        .map_err(|error| error.to_string())?;
+    download_verified(
+        DownloadSpec {
+            url: archive_url,
+            destination: archive_path.clone(),
+            expected_sha1: archive_sha1.to_ascii_lowercase(),
+            expected_size: Some(file.size),
+        },
+        None,
+    )
+    .await
+    .map_err(|error| format!("Unable to download Modrinth pack: {error}"))?;
+    verify_sha512(archive_path.clone(), archive_sha512).await?;
+
+    let index_path = archive_path.clone();
+    let index = tokio::task::spawn_blocking(move || read_mrpack_index(&index_path))
+        .await
+        .map_err(|error| format!("Modrinth pack parser failed: {error}"))??;
+    if index.format_version != 1 || index.game != "minecraft" {
+        return Err("NOVA supports Minecraft Modrinth packs using format version 1".to_owned());
+    }
+    if index.files.len() > 10_000 {
+        return Err("Modrinth pack contains too many files".to_owned());
+    }
+    let game_version = index.dependencies.get("minecraft")
+        .filter(|value| safe_identifier(value))
+        .ok_or_else(|| "Modrinth pack does not declare a valid Minecraft version".to_owned())?
+        .clone();
+    for unsupported in ["forge", "neoforge", "quilt-loader"] {
+        if index.dependencies.contains_key(unsupported) {
+            return Err(format!("This pack requires {unsupported}; this NOVA build currently supports Fabric packs only."));
+        }
+    }
+    let fabric_loader = index.dependencies.get("fabric-loader").cloned();
+    if fabric_loader.as_deref().is_some_and(|value| !safe_identifier(value)) {
+        return Err("Modrinth pack specifies an invalid Fabric loader version".to_owned());
+    }
+    if fabric_loader.is_none()
+        && index.files.iter().any(|entry| entry.path.to_ascii_lowercase().starts_with("mods/"))
+    {
+        return Err("This pack contains mods but does not declare a supported loader.".to_owned());
+    }
+
+    let pack_instance_id = format!("pack_{version_id}");
+    if !safe_identifier(&pack_instance_id) {
+        return Err("Modrinth pack version identifier cannot be used as a NOVA profile name".to_owned());
+    }
+    let instance_root = data_root.join("instances").join(&pack_instance_id);
+    if fs::try_exists(&instance_root).await.map_err(|error| error.to_string())? {
+        return Err(format!("This modpack is already installed as {pack_instance_id}"));
+    }
+
+    let mut marker = ensure_pack_instance_base(
+        data_root,
+        cache_root,
+        &pack_instance_id,
+        &game_version,
+        &index.name,
+        project_id,
+        version_id,
+    ).await?;
+
+    if let Some(loader_version) = fabric_loader {
+        marker = install_fabric_loader_inner(
+            data_root,
+            &pack_instance_id,
+            Some(&loader_version),
+            progress.clone(),
+        ).await?;
+    }
+
+    let archive_for_overrides = archive_path.clone();
+    let instance_for_overrides = instance_root.clone();
+    let (override_files, override_bytes) = tokio::task::spawn_blocking(move || {
+        extract_mrpack_overrides(&archive_for_overrides, &instance_for_overrides)
+    })
+    .await
+    .map_err(|error| format!("Modrinth override extraction worker failed: {error}"))??;
+
+    let mut downloaded_files = 0_usize;
+    let mut downloaded_bytes = 0_u64;
+    let mut seen_paths = HashSet::new();
+    for entry in index.files {
+        let client_environment = entry.env
+            .as_ref()
+            .and_then(|environment| environment.get("client"))
+            .map(String::as_str)
+            .unwrap_or("required");
+        if matches!(client_environment, "unsupported" | "optional") {
+            continue;
+        }
+        let relative = safe_relative_path(&entry.path)?;
+        let relative_string = relative.to_string_lossy().replace('\\', "/");
+        if !seen_paths.insert(relative_string.clone()) {
+            return Err(format!("Modrinth pack contains a duplicate file path: {relative_string}"));
+        }
+        if entry.file_size == 0 || entry.file_size > MAX_MOD_FILE_BYTES {
+            return Err(format!("Modrinth pack file {relative_string} has an invalid size"));
+        }
+        let sha1 = entry.hashes.get("sha1")
+            .filter(|value| valid_sha1(value))
+            .ok_or_else(|| format!("Modrinth pack file {relative_string} has no valid SHA-1 hash"))?;
+        let sha512 = entry.hashes.get("sha512")
+            .filter(|value| value.len() == 128 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
+            .ok_or_else(|| format!("Modrinth pack file {relative_string} has no valid SHA-512 hash"))?;
+        let raw_url = entry.downloads.iter()
+            .find_map(|url| safe_modpack_url(url).ok())
+            .ok_or_else(|| format!("Modrinth pack file {relative_string} has no trusted HTTPS mirror"))?;
+        let destination = instance_root.join(&relative);
+        let outcome = download_verified(
+            DownloadSpec {
+                url: raw_url,
+                destination,
+                expected_sha1: sha1.to_ascii_lowercase(),
+                expected_size: Some(entry.file_size),
+            },
+            None,
+        )
+        .await
+        .map_err(|error| format!("Unable to install pack file {relative_string}: {error}"))?;
+        let verify_path = instance_root.join(&relative);
+        if let Err(error) = verify_sha512(verify_path.clone(), sha512.clone()).await {
+            let _ = fs::remove_file(verify_path).await;
+            return Err(format!("Integrity verification failed for {relative_string}: {error}"));
+        }
+        downloaded_files += 1;
+        downloaded_bytes = downloaded_bytes.saturating_add(outcome.bytes);
+        if let Some(sender) = &progress {
+            let _ = sender.send(InstallProgress {
+                phase: "modrinth-pack-files".to_owned(),
+                completed_files: downloaded_files,
+                total_files: index.files.len(),
+                current_file: relative_string,
+                transferred_bytes: downloaded_bytes,
+                total_bytes: None,
+                attempt: 1,
+            }).await;
+        }
+    }
+
+    marker.files = marker.files.saturating_add(downloaded_files).saturating_add(override_files);
+    marker.total_bytes = marker.total_bytes
+        .saturating_add(downloaded_bytes)
+        .saturating_add(override_bytes);
+    marker.instance_type = Some("modpack".to_owned());
+    marker.display_name = Some(index.name);
+    marker.modrinth_project_id = Some(project_id.to_owned());
+    marker.modrinth_version_id = Some(version_id.to_owned());
+    write_instance_marker(&instance_root, &marker).await?;
+
+    if let Some(sender) = progress {
+        let _ = sender.send(InstallProgress {
+            phase: "completed".to_owned(),
+            completed_files: downloaded_files + override_files,
+            total_files: downloaded_files + override_files,
+            current_file: marker.display_name.clone().unwrap_or_else(|| pack_instance_id.clone()),
+            transferred_bytes: downloaded_bytes + override_bytes,
+            total_bytes: Some(downloaded_bytes + override_bytes),
+            attempt: 1,
+        }).await;
+    }
+    Ok(marker)
+}
+
+#[tauri::command]
+pub(crate) async fn install_modrinth_modpack(
+    app: tauri::AppHandle,
+    project_id: String,
+    version_id: String,
+) -> Result<InstalledInstance, String> {
+    let data_root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Unable to resolve NOVA data directory: {error}"))?;
+    let cache_root = app
+        .path()
+        .app_cache_dir()
+        .map_err(|error| format!("Unable to resolve NOVA cache directory: {error}"))?;
+
+    let pack_instance_id = format!("pack_{version_id}");
+    let result = install_modrinth_modpack_inner(
+        &data_root,
+        &cache_root,
+        &project_id,
+        &version_id,
+        None,
+    ).await;
+    if result.is_err() && safe_identifier(&pack_instance_id) {
+        let partial = data_root.join("instances").join(pack_instance_id);
+        let _ = fs::remove_dir_all(partial).await;
+    }
+    result
+}
+
 
 #[cfg(test)]
 mod tests {
