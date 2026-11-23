@@ -574,11 +574,7 @@ where
         } else {
             line
         };
-        let sanitized = crate::diagnostics::record_process_log(
-            &instance_id,
-            stream_name,
-            &bounded,
-        );
+        let sanitized = crate::diagnostics::record_process_log(&instance_id, stream_name, &bounded);
         let _ = app.emit(
             "nova-process-log",
             ProcessLogEvent {
