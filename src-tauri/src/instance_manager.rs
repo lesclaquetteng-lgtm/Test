@@ -34,10 +34,7 @@ fn safe_id(value: &str) -> bool {
 
 fn validate_display_name(value: &str) -> Result<String, String> {
     let name = value.trim();
-    if name.is_empty()
-        || name.chars().count() > 48
-        || name.chars().any(char::is_control)
-    {
+    if name.is_empty() || name.chars().count() > 48 || name.chars().any(char::is_control) {
         return Err("Instance names must contain 1–48 visible characters".to_owned());
     }
     Ok(name.to_owned())
@@ -92,13 +89,16 @@ async fn read_marker(
     let bytes = tokio::fs::read(&marker_path)
         .await
         .map_err(|error| error.to_string())?;
-    let marker: mojang::InstalledInstance =
-        serde_json::from_slice(&bytes).map_err(|error| format!("Invalid instance marker: {error}"))?;
+    let marker: mojang::InstalledInstance = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("Invalid instance marker: {error}"))?;
     if marker.id != instance_id || marker.instance_path != root.to_string_lossy().as_ref() {
         return Err("Instance marker does not match its NOVA-managed directory".to_owned());
     }
     if marker.client_sha1.len() != 40
-        || !marker.client_sha1.bytes().all(|byte| byte.is_ascii_hexdigit())
+        || !marker
+            .client_sha1
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
     {
         return Err("Instance marker has an invalid Minecraft client checksum".to_owned());
     }
@@ -134,10 +134,17 @@ fn write_marker(root: &Path, marker: &mojang::InstalledInstance) -> Result<(), S
     Ok(())
 }
 
-fn copy_tree(source: &Path, destination: &Path, canonical_root: &Path) -> Result<CopySummary, String> {
+fn copy_tree(
+    source: &Path,
+    destination: &Path,
+    canonical_root: &Path,
+) -> Result<CopySummary, String> {
     let metadata = fs::symlink_metadata(source).map_err(|error| error.to_string())?;
     if !metadata.is_dir() || metadata.file_type().is_symlink() {
-        return Err(format!("Refusing to copy a non-directory or linked path: {}", source.display()));
+        return Err(format!(
+            "Refusing to copy a non-directory or linked path: {}",
+            source.display()
+        ));
     }
     let canonical_source = fs::canonicalize(source).map_err(|error| error.to_string())?;
     if !canonical_source.starts_with(canonical_root) {
@@ -152,7 +159,10 @@ fn copy_tree(source: &Path, destination: &Path, canonical_root: &Path) -> Result
         let destination_path = destination.join(entry.file_name());
         let entry_type = entry.file_type().map_err(|error| error.to_string())?;
         if entry_type.is_symlink() {
-            return Err(format!("Instance contains a symbolic link: {}", source_path.display()));
+            return Err(format!(
+                "Instance contains a symbolic link: {}",
+                source_path.display()
+            ));
         }
         let canonical_entry = fs::canonicalize(&source_path).map_err(|error| error.to_string())?;
         if !canonical_entry.starts_with(canonical_root) {
@@ -167,11 +177,15 @@ fn copy_tree(source: &Path, destination: &Path, canonical_root: &Path) -> Result
             if let Some(parent) = destination_path.parent() {
                 fs::create_dir_all(parent).map_err(|error| error.to_string())?;
             }
-            let copied = fs::copy(&source_path, &destination_path).map_err(|error| error.to_string())?;
+            let copied =
+                fs::copy(&source_path, &destination_path).map_err(|error| error.to_string())?;
             summary.files = summary.files.saturating_add(1);
             summary.bytes = summary.bytes.saturating_add(copied);
         } else {
-            return Err(format!("Unsupported file type in instance: {}", source_path.display()));
+            return Err(format!(
+                "Unsupported file type in instance: {}",
+                source_path.display()
+            ));
         }
     }
     Ok(summary)
@@ -179,7 +193,10 @@ fn copy_tree(source: &Path, destination: &Path, canonical_root: &Path) -> Result
 
 fn copy_folder_contents(source: &Path, destination: &Path) -> Result<(), String> {
     if !source.exists() {
-        return Err(format!("Required source folder is missing: {}", source.display()));
+        return Err(format!(
+            "Required source folder is missing: {}",
+            source.display()
+        ));
     }
     let metadata = fs::symlink_metadata(source).map_err(|error| error.to_string())?;
     if !metadata.is_dir() || metadata.file_type().is_symlink() {
@@ -197,7 +214,10 @@ pub(crate) async fn rename_instance(
     instance_id: String,
     display_name: String,
 ) -> Result<mojang::InstalledInstance, String> {
-    let data_root = app.path().app_data_dir().map_err(|error| error.to_string())?;
+    let data_root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
     let (root, mut marker) = read_marker(&data_root, &instance_id).await?;
     marker.display_name = Some(validate_display_name(&display_name)?);
     write_marker(&root, &marker)?;
@@ -211,19 +231,29 @@ pub(crate) async fn duplicate_instance(
     new_instance_id: String,
     display_name: String,
 ) -> Result<mojang::InstalledInstance, String> {
-    let data_root = app.path().app_data_dir().map_err(|error| error.to_string())?;
+    let data_root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
     let (source, source_marker) = read_marker(&data_root, &instance_id).await?;
     let destination = instance_root(&data_root, &new_instance_id)?;
     let display_name = validate_display_name(&display_name)?;
     if instance_id == new_instance_id {
         return Err("The duplicated profile must have a different identifier".to_owned());
     }
-    if tokio::fs::try_exists(&destination).await.map_err(|error| error.to_string())? {
-        return Err(format!("An instance named {new_instance_id} already exists"));
+    if tokio::fs::try_exists(&destination)
+        .await
+        .map_err(|error| error.to_string())?
+    {
+        return Err(format!(
+            "An instance named {new_instance_id} already exists"
+        ));
     }
 
     let instances_root = data_root.join("instances");
-    tokio::fs::create_dir_all(&instances_root).await.map_err(|error| error.to_string())?;
+    tokio::fs::create_dir_all(&instances_root)
+        .await
+        .map_err(|error| error.to_string())?;
     let temporary = instances_root.join(format!(".nova-copy-{new_instance_id}-{}", unix_now()));
     let source_for_copy = source.clone();
     let temporary_for_copy = temporary.clone();
@@ -262,7 +292,10 @@ pub(crate) async fn delete_instance(
     if launch::is_instance_running(&instance_id)? {
         return Err("Stop Minecraft before deleting this instance".to_owned());
     }
-    let data_root = app.path().app_data_dir().map_err(|error| error.to_string())?;
+    let data_root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
     let (root, _) = read_marker(&data_root, &instance_id).await?;
     let instances_root = data_root.join("instances");
     let canonical_root = fs::canonicalize(&instances_root).map_err(|error| error.to_string())?;
@@ -274,7 +307,9 @@ pub(crate) async fn delete_instance(
     if !metadata.is_dir() || metadata.file_type().is_symlink() {
         return Err("Refusing to delete a linked or non-directory instance".to_owned());
     }
-    tokio::fs::remove_dir_all(root).await.map_err(|error| error.to_string())
+    tokio::fs::remove_dir_all(root)
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -284,7 +319,10 @@ pub(crate) async fn update_instance_settings(
     memory_mb: Option<u32>,
     jvm_arguments: Option<Vec<String>>,
 ) -> Result<mojang::InstalledInstance, String> {
-    let data_root = app.path().app_data_dir().map_err(|error| error.to_string())?;
+    let data_root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
     let (root, mut marker) = read_marker(&data_root, &instance_id).await?;
     if let Some(memory) = memory_mb {
         if !(1024..=32768).contains(&memory) {
@@ -311,19 +349,32 @@ pub(crate) async fn repair_instance(
     if launch::is_instance_running(&instance_id)? {
         return Err("Stop Minecraft before repairing this instance".to_owned());
     }
-    let data_root = app.path().app_data_dir().map_err(|error| error.to_string())?;
-    let cache_root = app.path().app_cache_dir().map_err(|error| error.to_string())?;
+    let data_root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let cache_root = app
+        .path()
+        .app_cache_dir()
+        .map_err(|error| error.to_string())?;
     let (target_root, original) = read_marker(&data_root, &instance_id).await?;
-    let game_version = original.game_version.clone().unwrap_or_else(|| original.id.clone());
+    let game_version = original
+        .game_version
+        .clone()
+        .unwrap_or_else(|| original.id.clone());
     if !safe_id(&game_version) {
         return Err("This profile has an invalid base Minecraft version".to_owned());
     }
     if marker.loader.is_some() && marker.loader.as_deref() != Some("fabric") {
-        return Err("Repair for this loader is not available yet. The instance was left unchanged.".to_owned());
+        return Err(
+            "Repair for this loader is not available yet. The instance was left unchanged."
+                .to_owned(),
+        );
     }
 
     // Re-run the official Vanilla installer to backfill missing client, asset, library and native files.
-    let repaired_base = mojang::install_vanilla(&data_root, &cache_root, &game_version, None).await?;
+    let repaired_base =
+        mojang::install_vanilla(&data_root, &cache_root, &game_version, None).await?;
     if instance_id != game_version {
         let source_root = data_root.join("instances").join(&game_version);
         let source_version = source_root.join("versions").join(&game_version);
@@ -360,7 +411,10 @@ pub(crate) fn open_instance_folder(
     app: tauri::AppHandle,
     instance_id: String,
 ) -> Result<(), String> {
-    let data_root = app.path().app_data_dir().map_err(|error| error.to_string())?;
+    let data_root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
     let root = instance_root(&data_root, &instance_id)?;
     let marker = fs::read(root.join(".nova-install.json")).map_err(|error| error.to_string())?;
     let parsed: mojang::InstalledInstance =
