@@ -160,6 +160,29 @@ fn unique_sibling(destination: &Path, suffix: &str) -> Result<PathBuf, DownloadE
     Ok(destination.with_file_name(format!(".{name}.{sequence}.{suffix}")))
 }
 
+struct TempArtifactGuard {
+    path: PathBuf,
+}
+
+impl TempArtifactGuard {
+    fn new(path: PathBuf) -> Self {
+        Self { path }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for TempArtifactGuard {
+    fn drop(&mut self) {
+        // Best-effort synchronous cleanup is intentional: Drop also runs when
+        // an async download future is cancelled before it reaches its normal
+        // error-handling path.
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
 fn digest_to_hex(digest: impl AsRef<[u8]>) -> String {
     let mut output = String::with_capacity(digest.as_ref().len() * 2);
     for byte in digest.as_ref() {
@@ -271,11 +294,11 @@ async fn download_once(
     }
 
     let total_bytes = spec.expected_size.or_else(|| response.content_length());
-    let temp = unique_sibling(&spec.destination, "part")?;
+    let temp = TempArtifactGuard::new(unique_sibling(&spec.destination, "part")?);
     let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
-        .open(&temp)
+        .open(temp.path())
         .await?;
     let mut stream = response.bytes_stream();
     let mut hasher = Sha1::new();
@@ -322,13 +345,11 @@ async fn download_once(
     drop(file);
 
     if let Err(error) = transfer_result {
-        let _ = fs::remove_file(&temp).await;
         return Err(error);
     }
 
     if let Some(expected) = spec.expected_size {
         if expected != transferred_bytes {
-            let _ = fs::remove_file(&temp).await;
             return Err(DownloadError::SizeMismatch {
                 expected,
                 actual: transferred_bytes,
@@ -339,14 +360,10 @@ async fn download_once(
     let actual_sha1 = digest_to_hex(hasher.finalize());
     if actual_sha1 != expected_sha1 {
         crate::performance::global().record_verification_failure();
-        let _ = fs::remove_file(&temp).await;
         return Err(DownloadError::HashMismatch);
     }
 
-    if let Err(error) = publish_verified_file(&temp, &spec.destination).await {
-        let _ = fs::remove_file(&temp).await;
-        return Err(error);
-    }
+    publish_verified_file(temp.path(), &spec.destination).await?;
 
     if let Some(progress) = progress {
         let _ = progress.try_send(DownloadProgress {
@@ -428,5 +445,25 @@ mod tests {
             "abcdef0123456789abcdef0123456789abcdef01"
         );
         assert!(normalize_sha1("not-a-hash").is_err());
+    }
+
+    #[test]
+    fn removes_partial_file_when_download_guard_is_dropped() {
+        use super::{TempArtifactGuard, TEMP_SEQUENCE};
+        use std::{fs, time::{SystemTime, UNIX_EPOCH}};
+
+        let unique = TEMP_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock is after UNIX epoch")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("nova-partial-{nonce}-{unique}.tmp"));
+        fs::write(&path, b"partial download").expect("create partial file");
+
+        let guard = TempArtifactGuard::new(path.clone());
+        assert!(path.exists());
+        drop(guard);
+
+        assert!(!path.exists(), "cancelled download temp file must be removed");
     }
 }
