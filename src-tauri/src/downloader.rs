@@ -89,7 +89,7 @@ impl DownloadError {
             Self::Request(error) => error.is_timeout() || error.is_connect() || error.is_body(),
             Self::HttpStatus(status) => {
                 *status == 408 || *status == 429 || (500..=599).contains(status)
-            },
+            }
             Self::SizeMismatch { .. } | Self::HashMismatch => true,
             _ => false,
         }
