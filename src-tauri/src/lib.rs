@@ -1,6 +1,8 @@
 use serde::Serialize;
 use std::{env, path::PathBuf, process::Command};
 
+mod performance;
+
 #[derive(Debug, Serialize)]
 struct RuntimeStatus {
     platform: String,
@@ -50,22 +52,35 @@ fn default_minecraft_directory() -> Option<String> {
 }
 
 #[tauri::command]
-fn get_runtime_status() -> RuntimeStatus {
-    let java_version = detected_java_version();
+async fn get_runtime_status() -> Result<RuntimeStatus, String> {
+    let _operation = performance::global().track();
 
-    RuntimeStatus {
-        platform: env::consts::OS.to_string(),
-        architecture: env::consts::ARCH.to_string(),
-        java_available: java_version.is_some(),
-        java_version,
-        minecraft_directory: default_minecraft_directory(),
-    }
+    tauri::async_runtime::spawn_blocking(|| {
+        let java_version = detected_java_version();
+        RuntimeStatus {
+            platform: env::consts::OS.to_string(),
+            architecture: env::consts::ARCH.to_string(),
+            java_available: java_version.is_some(),
+            java_version,
+            minecraft_directory: default_minecraft_directory(),
+        }
+    })
+    .await
+    .map_err(|error| format!("Runtime diagnostic task failed: {error}"))
+}
+
+#[tauri::command]
+fn get_performance_snapshot() -> performance::PerformanceSnapshot {
+    performance::global().snapshot()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![get_runtime_status])
+        .invoke_handler(tauri::generate_handler![
+            get_runtime_status,
+            get_performance_snapshot
+        ])
         .run(tauri::generate_context!())
         .expect("error while running NOVA Launcher");
 }
