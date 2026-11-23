@@ -193,7 +193,12 @@ async fn run_diagnostics(
         cache_root,
         instance_id,
         deep,
-        if deep { "manual_deep_scan" } else { "manual_quick_scan" }.to_owned(),
+        if deep {
+            "manual_deep_scan"
+        } else {
+            "manual_quick_scan"
+        }
+        .to_owned(),
     )
     .await
 }
