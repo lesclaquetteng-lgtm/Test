@@ -250,12 +250,14 @@ async fn list_forge(game_version: &str) -> Result<Vec<LoaderRelease>, String> {
     for full in xml_versions(&metadata) {
         if let Some(build) = full.strip_prefix(&prefix) {
             if safe_token(build) {
+                let display_version = build.to_owned();
+                let stable = is_stable(build);
                 releases.push(LoaderRelease {
                     loader: "forge".to_owned(),
                     game_version: game_version.to_owned(),
                     version: full,
-                    display_version: build.to_owned(),
-                    stable: is_stable(build),
+                    display_version,
+                    stable,
                 });
             }
         }
@@ -866,9 +868,9 @@ pub(crate) async fn repair_loader(
     data_root: &Path,
     cache_root: &Path,
     instance_id: &str,
-    mut marker: InstalledInstance,
+    marker: InstalledInstance,
 ) -> Result<InstalledInstance, String> {
-    let loader = marker
+    let loader
         .loader
         .clone()
         .ok_or_else(|| "This instance has no mod loader to repair".to_owned())?;
