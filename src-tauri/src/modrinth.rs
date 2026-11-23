@@ -861,6 +861,7 @@ async fn fetch_version(version_id: &str) -> Result<ModrinthVersion, String> {
 async fn collect_required_versions(
     root_version: ModrinthVersion,
     game_version: &str,
+    loader: &str,
 ) -> Result<Vec<ModrinthVersion>, String> {
     let mut visited = HashSet::new();
     let mut output = Vec::new();
@@ -880,10 +881,10 @@ async fn collect_required_versions(
             .game_versions
             .iter()
             .any(|value| value == game_version)
-            || !version.loaders.iter().any(|value| value == "fabric")
+            || !version.loaders.iter().any(|value| value == loader)
         {
             return Err(format!(
-                "{} {} is not compatible with Minecraft {game_version} and Fabric",
+                "{} {} is not compatible with Minecraft {game_version} and {loader}",
                 version.name, version.version_number
             ));
         }
@@ -904,7 +905,7 @@ async fn collect_required_versions(
             let dependency_version = if let Some(id) = dependency.version_id.as_deref() {
                 Some(fetch_version(id).await?)
             } else if let Some(project_id) = dependency.project_id.as_deref() {
-                get_project_versions(project_id, Some(game_version), Some("fabric"))
+                get_project_versions(project_id, Some(game_version), Some(loader))
                     .await?
                     .into_iter()
                     .find(|candidate| {
@@ -1083,28 +1084,27 @@ async fn install_modrinth_mod_inner(
     progress: Option<mpsc::Sender<InstallProgress>>,
 ) -> Result<ModInstallResult, String> {
     let (instance_root, marker) = read_instance_marker(data_root, instance_id).await?;
-    if marker.loader.as_deref() != Some("fabric") {
-        return Err("Install Fabric on this instance before adding Fabric mods".to_owned());
-    }
+    let loader = marker
+        .loader
+        .as_deref()
+        .filter(|loader| matches!(*loader, "fabric" | "forge" | "neoforge"))
+        .ok_or_else(|| "Install Fabric, Forge or NeoForge on this instance before adding mods".to_owned())?;
     let game_version = marker
         .game_version
         .clone()
         .unwrap_or_else(|| marker.id.clone());
-    let candidates = get_project_versions(project_id, Some(&game_version), Some("fabric")).await?;
+    let candidates = get_project_versions(project_id, Some(&game_version), Some(loader)).await?;
     let selected = candidates
         .into_iter()
         .find(|version| {
-            version.loaders.iter().any(|loader| loader == "fabric")
-                && version
-                    .game_versions
-                    .iter()
-                    .any(|version| version == &game_version)
+            version.loaders.iter().any(|candidate| candidate == loader)
+                && version.game_versions.iter().any(|version| version == &game_version)
         })
         .ok_or_else(|| {
-            format!("No Fabric release of this project supports Minecraft {game_version}")
+            format!("No {loader} release of this project supports Minecraft {game_version}")
         })?;
 
-    let versions = collect_required_versions(selected, &game_version).await?;
+    let versions = collect_required_versions(selected, &game_version, loader).await?;
 
     let total = versions
         .iter()
