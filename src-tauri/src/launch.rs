@@ -700,22 +700,26 @@ pub(crate) async fn launch_instance(
         state: "running".to_owned(),
     };
 
-    {
+    let inserted = {
         let mut active = sessions()
             .lock()
             .map_err(|_| "Launch session registry is unavailable".to_owned())?;
-        if !active.is_empty() {
-            drop(active);
-            let _ = child.kill().await;
-            return Err("Another Minecraft process started concurrently".to_owned());
+        if active.is_empty() {
+            active.insert(
+                instance_id.clone(),
+                ProcessSession {
+                    snapshot: snapshot.clone(),
+                    stop: stop_sender,
+                },
+            );
+            true
+        } else {
+            false
         }
-        active.insert(
-            instance_id.clone(),
-            ProcessSession {
-                snapshot: snapshot.clone(),
-                stop: stop_sender,
-            },
-        );
+    };
+    if !inserted {
+        let _ = child.kill().await;
+        return Err("Another Minecraft process started concurrently".to_owned());
     }
 
     let _ = app.emit(
