@@ -42,6 +42,7 @@ Planned modules:
 - minecraft: native archive extraction, Java compatibility, launch argument resolution and process lifecycle.
 - instances: instance manifests, paths, import/export and isolation.
 - downloads: a reusable Rust transport with global/per-host concurrency bounds, SHA-1 streaming verification, a bounded progress channel, selective retries and rollback-safe publication. Cancellation and HTTP range resume are still pending.
+- natives: staged ZIP extraction for OS-specific native archives, with traversal/device-name/symlink protections, duplicate-path detection, bounded entry counts and decompressed-size ceilings.
 - accounts: Microsoft / Xbox / Minecraft authentication and secure token storage.
 - loaders: Fabric first, then Forge, NeoForge and Quilt.
 - content: Modrinth and CurseForge provider adapters, dependency and compatibility checks.
@@ -104,4 +105,4 @@ API keys and service credentials must follow the provider's terms and must not b
 - UI tests for navigation, loading, empty, error and success states.
 - Windows smoke tests before distributing a release.
 
-The current feature branch implements the desktop shell, asynchronous Java diagnostics, native performance counters, a verified-download transport, official Mojang version discovery and a first Vanilla installation pipeline. The installer validates the manifest and version metadata, verifies client/library/asset/native-archive artifacts, deduplicates shared assets and emits native progress events. Native archive extraction, launch argument resolution, Java selection and process lifecycle remain open; authentication, mod loaders and content providers remain roadmap work.
+The current feature branch implements the desktop shell, asynchronous Java diagnostics, native performance counters, a verified-download transport, official Mojang version discovery and a first Vanilla installation pipeline. The installer validates the manifest and version metadata, verifies client/library/asset/native-archive artifacts, deduplicates shared assets and emits native progress events. Launch argument resolution, Java version selection and process lifecycle remain open; Microsoft authentication, mod loaders and content providers remain roadmap work.
