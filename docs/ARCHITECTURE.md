@@ -38,7 +38,8 @@ Responsibilities:
 Planned modules:
 
 - runtime: Java discovery, compatibility and installation.
-- minecraft: official version manifest, metadata, libraries, assets, natives and launch arguments.
+- mojang: official version manifest, version metadata, release/snapshot catalogue, cache validation and the first Vanilla install pipeline.
+- minecraft: native archive extraction, Java compatibility, launch argument resolution and process lifecycle.
 - instances: instance manifests, paths, import/export and isolation.
 - downloads: a reusable Rust transport with global/per-host concurrency bounds, SHA-1 streaming verification, a bounded progress channel, selective retries and rollback-safe publication. Cancellation and HTTP range resume are still pending.
 - accounts: Microsoft / Xbox / Minecraft authentication and secure token storage.
@@ -50,6 +51,7 @@ Planned modules:
 
 - Use one application data directory for launcher metadata and caches.
 - Use one dedicated directory per managed instance.
+- Share immutable, SHA-1-addressed assets and verified libraries across instances; keep each version JSON/client JAR and install marker in its own instance directory.
 - Never infer an instance path from an untrusted display name.
 - Canonicalize and validate paths before destructive operations.
 - Reject archive entries that escape the intended extraction root.
@@ -102,4 +104,4 @@ API keys and service credentials must follow the provider's terms and must not b
 - UI tests for navigation, loading, empty, error and success states.
 - Windows smoke tests before distributing a release.
 
-The current native foundation implements the desktop shell, asynchronous Java diagnostics, performance counters and a standalone verified-download transport. The downloader is not yet wired to Mojang's version manifest, instance installation or the UI. Authentication, loaders, content providers and the full launch pipeline remain roadmap work.
+The current feature branch implements the desktop shell, asynchronous Java diagnostics, native performance counters, a verified-download transport, official Mojang version discovery and a first Vanilla installation pipeline. The installer validates the manifest and version metadata, verifies client/library/asset/native-archive artifacts, deduplicates shared assets and emits native progress events. Native archive extraction, launch argument resolution, Java selection and process lifecycle remain open; authentication, mod loaders and content providers remain roadmap work.
