@@ -1,9 +1,5 @@
 use serde::Serialize;
-use std::{
-    env,
-    path::PathBuf,
-    process::Command,
-};
+use std::{env, path::PathBuf, process::Command};
 
 #[derive(Debug, Serialize)]
 struct RuntimeStatus {
