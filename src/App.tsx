@@ -28,6 +28,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 
 type Page = "overview" | "instances" | "accounts" | "modpacks" | "mods" | "downloads" | "performance" | "diagnostics" | "settings";
+const MEMORY_OPTIONS = [2048, 3072, 4096, 6144, 8192, 12288, 16384] as const;
 
 type RuntimeStatus = {
   platform: string;
@@ -325,10 +326,14 @@ function Topbar({
 function HomePage({
   isDesktop,
   playerName,
+  memoryMb,
+  setMemoryMb,
   onNavigate
 }: {
   isDesktop: boolean;
   playerName: string;
+  memoryMb: number;
+  setMemoryMb: (value: number) => void;
   onNavigate: (page: Page) => void;
 }) {
   const [catalog, setCatalog] = useState<VersionCatalog | null>(null);
@@ -447,19 +452,9 @@ function HomePage({
     <div className="nova-home">
       <section className="nova-hero">
         <div className="nova-hero-scene" aria-hidden="true">
-          <div className="nova-sky-glow" />
-          <div className="nova-cloud cloud-one" />
-          <div className="nova-cloud cloud-two" />
-          <div className="nova-sun" />
-          <div className="nova-mountain mountain-back" />
-          <div className="nova-mountain mountain-front" />
-          <div className="nova-floating-island">
-            <span className="island-grass" />
-            <span className="island-dirt" />
-            <span className="island-stone" />
-            <span className="island-tree" />
-          </div>
+          <img className="nova-world-image" src="/nova-world.svg" alt="" />
           <div className="nova-scene-vignette" />
+          <div className="nova-scene-grain" />
         </div>
 
         <div className="nova-hero-content">
@@ -469,34 +464,53 @@ function HomePage({
           <p className="nova-hero-subtitle">{selected ? `${featuredType} · Ready to launch` : "Your next adventure starts here."}</p>
 
           <div className="nova-hero-controls">
-            {instances.length > 0 ? (
+            <label className="nova-control-field">
+              <span>GAME VERSION</span>
+              {instances.length > 0 ? (
+                <select
+                  className="nova-version-select"
+                  value={selected?.id ?? ""}
+                  onChange={(event) => setSelectedId(event.target.value)}
+                  disabled={loading || Boolean(session) || launching}
+                  aria-label="Select installed Minecraft version"
+                >
+                  {instances.map((instance) => (
+                    <option key={instance.id} value={instance.id}>{instance.id} · {instance.versionType}</option>
+                  ))}
+                </select>
+              ) : (
+                <span className="nova-no-install">{loading ? "Checking library…" : "No version installed"}</span>
+              )}
+            </label>
+            <label className="nova-control-field nova-memory-field">
+              <span>ALLOCATED RAM</span>
               <select
-                className="nova-version-select"
-                value={selected?.id ?? ""}
-                onChange={(event) => setSelectedId(event.target.value)}
-                disabled={loading || Boolean(session) || launching}
-                aria-label="Select installed Minecraft version"
+                className="nova-memory-select"
+                value={memoryMb}
+                onChange={(event) => setMemoryMb(Number(event.target.value))}
+                disabled={Boolean(session) || launching}
+                aria-label="Minecraft memory allocation"
               >
-                {instances.map((instance) => (
-                  <option key={instance.id} value={instance.id}>{instance.id} · {instance.versionType}</option>
+                {MEMORY_OPTIONS.map((value) => (
+                  <option key={value} value={value}>{formatBytes(value * 1024 * 1024)}</option>
                 ))}
               </select>
-            ) : (
-              <span className="nova-no-install">{loading ? "Checking installed versions…" : "No Minecraft version installed"}</span>
-            )}
-            <button
-              className="nova-launch-button"
-              onClick={() => void launch()}
-              disabled={loading || launching || Boolean(session) || (!selected && !isDesktop)}
-            >
-              <Play size={17} fill="currentColor" />
-              {launching ? "Starting…" : session ? "Running" : selected ? "Launch" : "Choose version"}
-            </button>
-            {session && (
-              <button className="nova-stop-button" onClick={() => void launch()} title="Stop Minecraft">
-                <Square size={15} fill="currentColor" />
+            </label>
+            <div className="nova-launch-actions">
+              <button
+                className="nova-launch-button"
+                onClick={() => void launch()}
+                disabled={loading || launching || Boolean(session) || (!selected && !isDesktop)}
+              >
+                <Play size={17} fill="currentColor" />
+                {launching ? "Starting…" : session ? "Running" : selected ? "Launch" : "Choose version"}
               </button>
-            )}
+              {session && (
+                <button className="nova-stop-button" onClick={() => void launch()} title="Stop Minecraft" aria-label="Stop Minecraft">
+                  <Square size={15} fill="currentColor" />
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="nova-hero-meta">
@@ -578,20 +592,23 @@ function HomePage({
   );
 }
 
-function InstancesPage({ isDesktop, playerName, setPlayerName }: {
+function InstancesPage({ isDesktop, playerName, setPlayerName, memoryMb, setMemoryMb }: {
   isDesktop: boolean;
   playerName: string;
   setPlayerName: (value: string) => void;
+  memoryMb: number;
+  setMemoryMb: (value: number) => void;
 }) {
   const [catalog, setCatalog] = useState<VersionCatalog | null>(null);
   const [instances, setInstances] = useState<InstalledInstance[]>([]);
   const [selectedVersion, setSelectedVersion] = useState("");
-  const [includeSnapshots, setIncludeSnapshots] = useState(false);
+  const [versionSearch, setVersionSearch] = useState("");
+  const [versionFilter, setVersionFilter] = useState<"release" | "snapshot" | "all">("release");
+  const [versionLimit, setVersionLimit] = useState(12);
   const [loading, setLoading] = useState(true);
   const [installing, setInstalling] = useState(false);
   const [progress, setProgress] = useState<InstallProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [memoryMb, setMemoryMb] = useState(4096);
   const [launchSession, setLaunchSession] = useState<LaunchSession | null>(null);
   const [launching, setLaunching] = useState(false);
   const [launchError, setLaunchError] = useState<string | null>(null);
@@ -723,9 +740,14 @@ function InstancesPage({ isDesktop, playerName, setPlayerName }: {
     }
   }, []);
 
-  const releases = catalog?.versions.filter((version) => version.versionType === "release").slice(0, 40) ?? [];
-  const snapshots = catalog?.versions.filter((version) => version.versionType === "snapshot").slice(0, 20) ?? [];
+  const matchingVersions = (catalog?.versions ?? []).filter((version) => {
+    const matchesType = versionFilter === "all" || version.versionType === versionFilter;
+    const query = versionSearch.trim().toLowerCase();
+    return matchesType && (!query || version.id.toLowerCase().includes(query));
+  });
+  const visibleVersions = matchingVersions.slice(0, versionLimit);
   const selected = catalog?.versions.find((version) => version.id === selectedVersion);
+  const selectedIsInstalled = instances.some((instance) => instance.id === selectedVersion);
   const progressPercent = progress
     ? progress.phase === "completed"
       ? 100
@@ -748,48 +770,121 @@ function InstancesPage({ isDesktop, playerName, setPlayerName }: {
 
   return (
     <div className="instance-manager">
-      <section className="panel instance-installer">
+      <section className="panel instance-installer nova-catalog-panel">
         <div className="instance-installer-toolbar">
           <div>
             <span className="section-eyebrow">OFFICIAL MOJANG CATALOGUE</span>
-            <h2>Install a Vanilla version</h2>
-            <p>Official release metadata, SHA-1 checked client files, shared libraries and a deduplicated asset store. Each version receives its own instance directory.</p>
+            <h2>Choose your Minecraft version</h2>
+            <p>Browse official releases and snapshots. Every installation remains isolated and its downloaded files are integrity-checked.</p>
           </div>
           <button className="icon-button" onClick={() => void refresh()} disabled={loading || installing} aria-label="Refresh Minecraft versions">
             <RefreshCw size={16} className={loading ? "spin" : ""} />
           </button>
         </div>
-        <div className="instance-meta-line">
-          <span>Latest release · {catalog?.latest.release ?? "—"}</span>
-          <span>Latest snapshot · {catalog?.latest.snapshot ?? "—"}</span>
-          <span>{loading ? "SYNCING CATALOGUE" : catalog ? "MOJANG METADATA READY" : "CATALOGUE UNAVAILABLE"}</span>
+
+        <div className="nova-catalog-summary">
+          <div><span>LATEST RELEASE</span><strong>{catalog?.latest.release ?? "—"}</strong></div>
+          <div><span>LATEST SNAPSHOT</span><strong>{catalog?.latest.snapshot ?? "—"}</strong></div>
+          <div><span>LOCAL LIBRARY</span><strong>{instances.length} installed</strong></div>
+          <div className={catalog ? "catalog-sync-state ready" : "catalog-sync-state"}>
+            <i />
+            {loading ? "Syncing catalogue" : catalog ? "Mojang catalogue ready" : "Catalogue unavailable"}
+          </div>
         </div>
-        <div className="instance-catalog-controls">
-          <select
-            className="instance-select"
-            value={selectedVersion}
-            onChange={(event) => setSelectedVersion(event.target.value)}
-            disabled={loading || installing || !catalog}
-            aria-label="Minecraft version"
+
+        <div className="nova-catalog-toolbar">
+          <label className="nova-catalog-search">
+            <ScanSearch size={16} />
+            <input
+              type="search"
+              value={versionSearch}
+              onChange={(event) => {
+                setVersionSearch(event.target.value);
+                setVersionLimit(12);
+              }}
+              placeholder="Search Minecraft versions…"
+              aria-label="Search Minecraft versions"
+              disabled={loading || installing}
+            />
+          </label>
+          <div className="nova-catalog-tabs" role="group" aria-label="Version type">
+            <button type="button" className={versionFilter === "release" ? "active" : ""} onClick={() => { setVersionFilter("release"); setVersionLimit(12); }}>
+              Releases
+            </button>
+            <button type="button" className={versionFilter === "snapshot" ? "active" : ""} onClick={() => { setVersionFilter("snapshot"); setVersionLimit(12); }}>
+              Snapshots
+            </button>
+            <button type="button" className={versionFilter === "all" ? "active" : ""} onClick={() => { setVersionFilter("all"); setVersionLimit(12); }}>
+              All
+            </button>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="nova-catalog-empty"><RefreshCw size={18} className="spin" /> Loading the official version catalogue…</div>
+        ) : visibleVersions.length > 0 ? (
+          <div className="nova-catalog-grid">
+            {visibleVersions.map((version, index) => {
+              const installed = instances.some((instance) => instance.id === version.id);
+              const isLatest = version.id === catalog?.latest.release;
+              return (
+                <button
+                  type="button"
+                  key={version.id}
+                  className={selectedVersion === version.id ? "nova-catalog-version selected" : "nova-catalog-version"}
+                  onClick={() => setSelectedVersion(version.id)}
+                  disabled={installing}
+                  aria-pressed={selectedVersion === version.id}
+                >
+                  <span className={`nova-catalog-thumb catalog-scene-${index % 4}`}>
+                    <span className="nova-catalog-type">{version.versionType}</span>
+                    {isLatest && <span className="nova-catalog-flag latest">Latest</span>}
+                    {installed && <span className="nova-catalog-flag installed">Installed</span>}
+                  </span>
+                  <span className="nova-catalog-version-copy">
+                    <strong>{version.id}</strong>
+                    <small>{new Date(version.releaseTime).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}</small>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="nova-catalog-empty">
+            <Layers3 size={19} />
+            {versionSearch ? "No version matches this search." : "No versions are available in this category."}
+          </div>
+        )}
+
+        {matchingVersions.length > visibleVersions.length && (
+          <div className="nova-catalog-more">
+            <button type="button" onClick={() => setVersionLimit((current) => current + 12)}>
+              Show more versions <ArrowRight size={14} />
+            </button>
+            <span>{visibleVersions.length} of {matchingVersions.length} versions</span>
+          </div>
+        )}
+
+        <div className="nova-selected-version">
+          <div className="nova-selected-copy">
+            <span>SELECTED BUILD</span>
+            <strong>{selected?.id ?? (loading ? "Loading…" : "Choose a version")}</strong>
+            <small>
+              {selected
+                ? `${selected.versionType.toUpperCase()} · Released ${new Date(selected.releaseTime).toLocaleDateString()}${selectedIsInstalled ? " · Already installed" : ""}`
+                : "Select a card above to prepare an installation."}
+            </small>
+          </div>
+          <button
+            className="instance-install-button nova-selected-install"
+            onClick={() => void install()}
+            disabled={loading || installing || !selectedVersion || selectedIsInstalled}
           >
-            <optgroup label="Official releases">
-              {releases.map((version) => <option key={version.id} value={version.id}>{version.id}</option>)}
-            </optgroup>
-            {includeSnapshots && (
-              <optgroup label="Snapshots">
-                {snapshots.map((version) => <option key={version.id} value={version.id}>{version.id}</option>)}
-              </optgroup>
-            )}
-          </select>
-          <button className="instance-install-button" onClick={() => void install()} disabled={loading || installing || !selectedVersion}>
-            {installing ? <RefreshCw size={15} className="spin" /> : <Download size={15} />}
-            {installing ? "Installing…" : "Install Vanilla"}
+            {installing ? <RefreshCw size={15} className="spin" /> : selectedIsInstalled ? <CheckCircle2 size={15} /> : <Download size={15} />}
+            {installing ? "Installing…" : selectedIsInstalled ? "Already installed" : "Install Vanilla"}
           </button>
         </div>
-        <div className="instance-meta-line">
-          <label><input type="checkbox" checked={includeSnapshots} onChange={(event) => setIncludeSnapshots(event.target.checked)} disabled={installing} /> Include snapshots in selector</label>
-          <span>{selected ? selected.versionType.toUpperCase() + " · " + new Date(selected.releaseTime).toLocaleDateString() : "Select a version"}</span>
-        </div>
+
         {installing && progress && (
           <div className="instance-progress">
             <div className="instance-progress-head">
@@ -800,13 +895,13 @@ function InstancesPage({ isDesktop, playerName, setPlayerName }: {
               <div className="instance-progress-fill" style={{ width: progressPercent + "%" }} />
             </div>
             <div className="instance-progress-detail">
-              <span>{progress.completedFiles}/{progress.totalFiles} files · {formatBytes(progress.transferredBytes)} current file</span>
+              <span>{progress.completedFiles}/{progress.totalFiles} files · {formatBytes(progress.transferredBytes)} transferred</span>
               <span>{progress.currentFile}</span>
             </div>
           </div>
         )}
         {error && <div className="instance-error" role="alert">{error}</div>}
-        <p className="instance-catalog-note">NOVA stores reusable assets and libraries in a shared cache. An existing artifact is reused only after its size and SHA-1 have been verified.</p>
+        <p className="instance-catalog-note">NOVA reuses verified libraries and assets from its shared cache. An already-installed version is kept separate from every other instance.</p>
       </section>
 
       <section className="panel instance-installed">
@@ -865,7 +960,7 @@ function InstancesPage({ isDesktop, playerName, setPlayerName }: {
           <label className="launch-config-field">
             <span>Memory allocation</span>
             <select value={memoryMb} onChange={(event) => setMemoryMb(Number(event.target.value))} disabled={launching || Boolean(launchSession)}>
-              {[2048, 3072, 4096, 6144, 8192, 12288, 16384].map((value) => <option key={value} value={value}>{formatBytes(value * 1024 * 1024)} RAM</option>)}
+              {MEMORY_OPTIONS.map((value) => <option key={value} value={value}>{formatBytes(value * 1024 * 1024)} RAM</option>)}
             </select>
           </label>
         </div>
@@ -1351,6 +1446,14 @@ function App() {
       return "NOVAPlayer";
     }
   });
+  const [memoryMb, setMemoryMb] = useState<number>(() => {
+    try {
+      const saved = Number(window.localStorage.getItem("nova.memory.mb") || 4096);
+      return MEMORY_OPTIONS.includes(saved as typeof MEMORY_OPTIONS[number]) ? saved : 4096;
+    } catch {
+      return 4096;
+    }
+  });
   const [diagnosticReport, setDiagnosticReport] = useState<DiagnosticReport | null>(null);
   const [diagnosticLoading, setDiagnosticLoading] = useState(false);
   const [diagnosticError, setDiagnosticError] = useState<string | null>(null);
@@ -1364,6 +1467,14 @@ function App() {
       console.warn("Unable to persist the local player name:", cause);
     }
   }, [playerName]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("nova.memory.mb", String(memoryMb));
+    } catch (cause) {
+      console.warn("Unable to persist Minecraft memory allocation:", cause);
+    }
+  }, [memoryMb]);
 
   const runDiagnostics = useCallback(async (deep: boolean) => {
     if (!isDesktop || diagnosticLoading) return;
@@ -1439,8 +1550,8 @@ function App() {
               </div>
             )}
 
-            {page === "overview" && <HomePage isDesktop={isDesktop} playerName={playerName} onNavigate={setPage} />}
-            {page === "instances" && <InstancesPage isDesktop={isDesktop} playerName={playerName} setPlayerName={setPlayerName} />}
+            {page === "overview" && <HomePage isDesktop={isDesktop} playerName={playerName} memoryMb={memoryMb} setMemoryMb={setMemoryMb} onNavigate={setPage} />}
+            {page === "instances" && <InstancesPage isDesktop={isDesktop} playerName={playerName} setPlayerName={setPlayerName} memoryMb={memoryMb} setMemoryMb={setMemoryMb} />}
             {page === "accounts" && <AccountsPage playerName={playerName} onPlayerNameChange={setPlayerName} onNavigate={setPage} />}
             {page === "modpacks" && (
               <EmptyPage
