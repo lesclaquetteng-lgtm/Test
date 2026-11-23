@@ -425,11 +425,10 @@ fn redact_text(input: &str) -> String {
 
     let mut lines = Vec::new();
     for line in output.lines() {
-        let trimmed = line.trim();
-        if trimmed.to_ascii_lowercase().starts_with("authorization:") {
-            lines.push("Authorization: [REDACTED]".to_owned());
-        } else if trimmed.to_ascii_lowercase().contains("bearer ") {
-            let index = line.to_ascii_lowercase().find("bearer ").unwrap_or(0);
+        let lowercase = line.to_ascii_lowercase();
+        if let Some(index) = lowercase.find("authorization:") {
+            lines.push(format!("{}Authorization: [REDACTED]", &line[..index]));
+        } else if let Some(index) = lowercase.find("bearer ") {
             lines.push(format!("{}Bearer [REDACTED]", &line[..index]));
         } else {
             lines.push(line.to_owned());
