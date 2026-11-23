@@ -117,6 +117,8 @@ pub(crate) struct InstalledInstance {
     #[serde(default)]
     pub loader_version: Option<String>,
     #[serde(default)]
+    pub launch_version: Option<String>,
+    #[serde(default)]
     pub instance_type: Option<String>,
     #[serde(default)]
     pub display_name: Option<String>,
@@ -862,6 +864,7 @@ async fn install_vanilla_inner(
         game_version: Some(version_id.to_owned()),
         loader: None,
         loader_version: None,
+        launch_version: None,
         instance_type: Some("vanilla".to_owned()),
         display_name: Some(format!("Minecraft {version_id}")),
         modrinth_project_id: None,
