@@ -106,6 +106,10 @@ struct InstallMarker {
     modrinth_project_id: Option<String>,
     #[serde(default)]
     modrinth_version_id: Option<String>,
+    #[serde(default)]
+    memory_mb: Option<u32>,
+    #[serde(default)]
+    jvm_arguments: Option<Vec<String>>,
 }
 
 fn sha1_file(path: &Path) -> Result<String, String> {
@@ -572,6 +576,33 @@ fn build_launch_arguments(
         game.extend(["--userProperties".to_owned(), "{}".to_owned()]);
     }
 
+    if let Some(custom_arguments) = &install.jvm_arguments {
+        if custom_arguments.len() > 32 {
+            return Err("This instance has too many custom JVM arguments".to_owned());
+        }
+        for argument in custom_arguments {
+            let value = argument.trim();
+            if value.is_empty()
+                || value.len() > 512
+                || value.chars().any(char::is_control)
+                || value.starts_with('@')
+                || value == "-cp"
+                || value == "-classpath"
+                || value.starts_with("-Xmx")
+                || value.starts_with("-Xms")
+                || value.starts_with("-Djava.library.path")
+                || value.starts_with("-Duser.dir")
+                || value.starts_with("-Djava.system.class.loader")
+                || value.starts_with("-javaagent")
+                || value.starts_with("-agentlib")
+                || value.starts_with("-agentpath")
+            {
+                return Err(format!("This instance contains a reserved or unsafe JVM argument: {value}"));
+            }
+            jvm.push(value.to_owned());
+        }
+    }
+
     jvm.push(main_class.to_owned());
     jvm.extend(game);
     Ok(jvm)
@@ -621,9 +652,6 @@ pub(crate) async fn launch_instance(
             "Offline player names must contain 3–16 letters, digits or underscores".to_owned(),
         );
     }
-    if !(1024..=32768).contains(&memory_mb) {
-        return Err("Memory allocation must be between 1024 MB and 32768 MB".to_owned());
-    }
     {
         let active = sessions()
             .lock()
@@ -642,6 +670,10 @@ pub(crate) async fn launch_instance(
         .map_err(|_| "The instance verification marker is invalid".to_owned())?;
     if marker.id != instance_id || !safe_id(&marker.asset_index) || marker.client_sha1.len() != 40 {
         return Err("The instance verification marker does not match this installation".to_owned());
+    }
+    let memory_mb = marker.memory_mb.unwrap_or(memory_mb);
+    if !(1024..=32768).contains(&memory_mb) {
+        return Err("Memory allocation must be between 1024 MB and 32768 MB".to_owned());
     }
 
     let game_version = marker.game_version.as_deref().unwrap_or(&instance_id);
@@ -851,6 +883,13 @@ pub(crate) async fn launch_instance(
     });
 
     Ok(snapshot)
+}
+
+pub(crate) fn is_instance_running(instance_id: &str) -> Result<bool, String> {
+    let active = sessions()
+        .lock()
+        .map_err(|_| "Launch session registry is unavailable".to_owned())?;
+    Ok(active.contains_key(instance_id))
 }
 
 pub(crate) fn list_sessions() -> Result<Vec<LaunchSession>, String> {
