@@ -10,8 +10,8 @@ use std::{
     sync::{Mutex, OnceLock},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tokio::process::Command as AsyncCommand;
 use tauri::{AppHandle, Emitter};
+use tokio::process::Command as AsyncCommand;
 
 const MAX_ASSET_OBJECTS: usize = 300_000;
 const MAX_LIBRARY_COUNT: usize = 20_000;
@@ -254,15 +254,26 @@ fn library_allowed(library: &Value) -> bool {
         };
         let mut matches = true;
         if let Some(os) = object.get("os").and_then(Value::as_object) {
-            if os.get("name").and_then(Value::as_str).is_some_and(|name| name != os_name) {
+            if os
+                .get("name")
+                .and_then(Value::as_str)
+                .is_some_and(|name| name != os_name)
+            {
                 matches = false;
             }
-            if os.get("arch").and_then(Value::as_str).is_some_and(|value| value != arch) {
+            if os
+                .get("arch")
+                .and_then(Value::as_str)
+                .is_some_and(|value| value != arch)
+            {
                 matches = false;
             }
         }
         if let Some(features) = object.get("features").and_then(Value::as_object) {
-            if features.values().any(|value| value.as_bool() != Some(false)) {
+            if features
+                .values()
+                .any(|value| value.as_bool() != Some(false))
+            {
                 matches = false;
             }
         }
@@ -445,7 +456,14 @@ fn excerpt_from_file(path: &Path, max_bytes: u64, max_lines: usize) -> Vec<Strin
     }
     let text = String::from_utf8_lossy(&bytes);
     let lines = text.lines().map(redact_text).collect::<Vec<_>>();
-    lines.into_iter().rev().take(max_lines).collect::<Vec<_>>().into_iter().rev().collect()
+    lines
+        .into_iter()
+        .rev()
+        .take(max_lines)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect()
 }
 
 fn latest_file_with_prefix(root: &Path, prefix: &str, extension: Option<&str>) -> Option<PathBuf> {
@@ -488,7 +506,10 @@ fn read_powershell_system(output: &str) -> Option<SystemInformation> {
         .filter_map(|gpu| {
             Some(GpuInformation {
                 name: gpu.get("name")?.as_str()?.to_owned(),
-                driver_version: gpu.get("driverVersion").and_then(Value::as_str).map(str::to_owned),
+                driver_version: gpu
+                    .get("driverVersion")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
                 adapter_memory_bytes: gpu.get("adapterMemoryBytes").and_then(Value::as_u64),
             })
         })
@@ -515,12 +536,20 @@ async fn collect_system_information() -> SystemInformation {
     if cfg!(windows) {
         let script = r#"$os=Get-CimInstance Win32_OperatingSystem; $cpu=Get-CimInstance Win32_Processor | Select-Object -First 1; $cs=Get-CimInstance Win32_ComputerSystem; $gpus=@(Get-CimInstance Win32_VideoController | ForEach-Object { [pscustomobject]@{ name=$_.Name; driverVersion=$_.DriverVersion; adapterMemoryBytes=[uint64]$_.AdapterRAM } }); [pscustomobject]@{ osCaption=$os.Caption; osVersion=$os.Version; osBuild=[string]$os.BuildNumber; cpuName=$cpu.Name; logicalProcessors=$cpu.NumberOfLogicalProcessors; memoryTotalBytes=[uint64]$cs.TotalPhysicalMemory; gpus=$gpus } | ConvertTo-Json -Compress -Depth 4"#;
         let command = AsyncCommand::new("powershell.exe")
-            .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script])
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                script,
+            ])
             .kill_on_drop(true)
             .output();
         if let Ok(Ok(output)) = tokio::time::timeout(Duration::from_secs(8), command).await {
             if output.status.success() {
-                if let Some(info) = read_powershell_system(&String::from_utf8_lossy(&output.stdout)) {
+                if let Some(info) = read_powershell_system(&String::from_utf8_lossy(&output.stdout))
+                {
                     return info;
                 }
             }
@@ -531,27 +560,35 @@ async fn collect_system_information() -> SystemInformation {
         .ok()
         .filter(|value| !value.trim().is_empty())
         .or_else(|| {
-            fs::read_to_string("/proc/cpuinfo").ok().and_then(|contents| {
-                contents
-                    .lines()
-                    .find_map(|line| line.strip_prefix("model name\t:").map(str::trim).map(str::to_owned))
-            })
+            fs::read_to_string("/proc/cpuinfo")
+                .ok()
+                .and_then(|contents| {
+                    contents.lines().find_map(|line| {
+                        line.strip_prefix("model name\t:")
+                            .map(str::trim)
+                            .map(str::to_owned)
+                    })
+                })
         });
-    let total_memory_bytes = fs::read_to_string("/proc/meminfo").ok().and_then(|contents| {
-        contents
-            .lines()
-            .find_map(|line| line.strip_prefix("MemTotal:"))
-            .and_then(|value| value.split_whitespace().next())
-            .and_then(|value| value.parse::<u64>().ok())
-            .map(|kilobytes| kilobytes.saturating_mul(1024))
-    });
+    let total_memory_bytes = fs::read_to_string("/proc/meminfo")
+        .ok()
+        .and_then(|contents| {
+            contents
+                .lines()
+                .find_map(|line| line.strip_prefix("MemTotal:"))
+                .and_then(|value| value.split_whitespace().next())
+                .and_then(|value| value.parse::<u64>().ok())
+                .map(|kilobytes| kilobytes.saturating_mul(1024))
+        });
     SystemInformation {
         operating_system: std::env::consts::OS.to_owned(),
         architecture: std::env::consts::ARCH.to_owned(),
         os_version: None,
         os_build: None,
         cpu_model,
-        logical_processors: std::thread::available_parallelism().map(usize::from).unwrap_or(1),
+        logical_processors: std::thread::available_parallelism()
+            .map(usize::from)
+            .unwrap_or(1),
         total_memory_bytes,
         gpus: Vec::new(),
         hardware_query_status: "partial; platform-specific hardware query unavailable".to_owned(),
@@ -571,17 +608,31 @@ fn inspect_instance(
         .ok()
         .and_then(|bytes| serde_json::from_slice(&bytes).ok());
 
-    if marker.as_ref().is_some_and(|marker| marker.id != instance_id) {
+    if marker
+        .as_ref()
+        .is_some_and(|marker| marker.id != instance_id)
+    {
         add_check(
-            checks, &format!("instance.{instance_id}.marker"), "instance", "error", "failed",
+            checks,
+            &format!("instance.{instance_id}.marker"),
+            "instance",
+            "error",
+            "failed",
             "Instance marker does not match its directory",
             "The installation marker identifies a different version than the directory name.",
             vec![format!("instances/{instance_id}/.nova-install.json")],
-            Some("Reinstall this Minecraft version so NOVA can rebuild its installation marker.".to_owned()),
+            Some(
+                "Reinstall this Minecraft version so NOVA can rebuild its installation marker."
+                    .to_owned(),
+            ),
         );
     } else if marker.is_none() {
         add_check(
-            checks, &format!("instance.{instance_id}.marker"), "instance", "error", "failed",
+            checks,
+            &format!("instance.{instance_id}.marker"),
+            "instance",
+            "error",
+            "failed",
             "Installation marker is missing or invalid",
             "NOVA cannot prove that this instance completed a verified installation.",
             vec![format!("instances/{instance_id}/.nova-install.json")],
@@ -589,7 +640,11 @@ fn inspect_instance(
         );
     } else {
         add_check(
-            checks, &format!("instance.{instance_id}.marker"), "instance", "info", "passed",
+            checks,
+            &format!("instance.{instance_id}.marker"),
+            "instance",
+            "info",
+            "passed",
             "Installation marker is valid",
             "The marker exists, parses and matches the instance identifier.",
             vec![format!("instances/{instance_id}/.nova-install.json")],
@@ -638,7 +693,10 @@ fn inspect_instance(
         if client_status == "verified" { None } else { Some("Reinstall this version; do not launch a client that failed integrity verification.".to_owned()) },
     );
 
-    let metadata_path = cache_root.join("mojang").join("versions").join(format!("{instance_id}.json"));
+    let metadata_path = cache_root
+        .join("mojang")
+        .join("versions")
+        .join(format!("{instance_id}.json"));
     let metadata_bytes = fs::read(&metadata_path).ok();
     let metadata: Option<Value> = metadata_bytes
         .as_ref()
@@ -659,7 +717,11 @@ fn inspect_instance(
             "Version metadata is missing, malformed or belongs to another version."
         },
         vec![format!("mojang/versions/{instance_id}.json")],
-        if metadata_valid { None } else { Some("Refresh the official catalogue and reinstall this instance.".to_owned()) },
+        if metadata_valid {
+            None
+        } else {
+            Some("Refresh the official catalogue and reinstall this instance.".to_owned())
+        },
     );
 
     let required_java = metadata
@@ -671,9 +733,17 @@ fn inspect_instance(
     let mut java_candidates = Vec::new();
     let mut java_paths = Vec::new();
     if let Some(home) = std::env::var_os("JAVA_HOME") {
-        java_paths.push((PathBuf::from(home).join("bin").join(if cfg!(windows) { "java.exe" } else { "java" }), "JAVA_HOME".to_owned()));
+        java_paths.push((
+            PathBuf::from(home)
+                .join("bin")
+                .join(if cfg!(windows) { "java.exe" } else { "java" }),
+            "JAVA_HOME".to_owned(),
+        ));
     }
-    java_paths.push((PathBuf::from(if cfg!(windows) { "java.exe" } else { "java" }), "PATH".to_owned()));
+    java_paths.push((
+        PathBuf::from(if cfg!(windows) { "java.exe" } else { "java" }),
+        "PATH".to_owned(),
+    ));
     for (path, source) in java_paths {
         let output = Command::new(&path).arg("-version").output();
         match output {
@@ -683,9 +753,14 @@ fn inspect_instance(
                     String::from_utf8_lossy(&output.stderr),
                     String::from_utf8_lossy(&output.stdout)
                 );
-                let version = version_text.lines().find(|line| !line.trim().is_empty()).map(str::trim).map(str::to_owned);
+                let version = version_text
+                    .lines()
+                    .find(|line| !line.trim().is_empty())
+                    .map(str::trim)
+                    .map(str::to_owned);
                 let major = version.as_deref().and_then(parse_java_major);
-                let compatible = required_java.map(|required| major.is_some_and(|value| value >= required));
+                let compatible =
+                    required_java.map(|required| major.is_some_and(|value| value >= required));
                 java_candidates.push(JavaInformation {
                     executable: sanitize_path(&path),
                     version,
@@ -710,7 +785,9 @@ fn inspect_instance(
             }),
         }
     }
-    let java_compatible = java_candidates.iter().any(|candidate| candidate.compatible == Some(true));
+    let java_compatible = java_candidates
+        .iter()
+        .any(|candidate| candidate.compatible == Some(true));
     add_check(
         checks,
         &format!("instance.{instance_id}.java"),
@@ -719,12 +796,36 @@ fn inspect_instance(
         if java_compatible { "passed" } else { "failed" },
         "Compatible Java runtime",
         if java_compatible {
-            format!("At least one detected Java runtime satisfies the required major version {}.", required_java.map(|value| value.to_string()).unwrap_or_else(|| "8 (default)".to_owned()))
+            format!(
+                "At least one detected Java runtime satisfies the required major version {}.",
+                required_java
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "8 (default)".to_owned())
+            )
         } else {
-            format!("No detected Java runtime satisfies the required major version {}.", required_java.map(|value| value.to_string()).unwrap_or_else(|| "8 (default)".to_owned()))
+            format!(
+                "No detected Java runtime satisfies the required major version {}.",
+                required_java
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "8 (default)".to_owned())
+            )
         },
-        java_candidates.iter().map(|candidate| format!("{} · {} · {}", candidate.source, candidate.version.as_deref().unwrap_or("unknown"), candidate.executable)).collect(),
-        if java_compatible { None } else { Some("Install the required Java major version and set JAVA_HOME to its installation directory.".to_owned()) },
+        java_candidates
+            .iter()
+            .map(|candidate| {
+                format!(
+                    "{} · {} · {}",
+                    candidate.source,
+                    candidate.version.as_deref().unwrap_or("unknown"),
+                    candidate.executable
+                )
+            })
+            .collect(),
+        if java_compatible {
+            None
+        } else {
+            Some("Install the required Java major version and set JAVA_HOME to its installation directory.".to_owned())
+        },
     );
 
     let libraries = metadata
@@ -736,7 +837,10 @@ fn inspect_instance(
     let mut invalid_libraries = 0usize;
     if let Some(libraries) = libraries {
         for library in libraries.iter().filter(|library| library_allowed(library)) {
-            let Some(artifact) = library.get("downloads").and_then(|value| value.get("artifact")) else {
+            let Some(artifact) = library
+                .get("downloads")
+                .and_then(|value| value.get("artifact"))
+            else {
                 continue;
             };
             let Some(relative_raw) = artifact.get("path").and_then(Value::as_str) else {
@@ -757,7 +861,9 @@ fn inspect_instance(
                         invalid_libraries += 1;
                     } else if deep {
                         if let Some(expected) = expected_hash {
-                            if safe_file_sha1(&path).is_ok_and(|actual| actual.eq_ignore_ascii_case(expected)) {
+                            if safe_file_sha1(&path)
+                                .is_ok_and(|actual| actual.eq_ignore_ascii_case(expected))
+                            {
                                 // Verified against the official version metadata.
                             } else {
                                 invalid_libraries += 1;
@@ -782,7 +888,11 @@ fn inspect_instance(
     );
 
     let asset_index_id = marker.asset_index.clone().unwrap_or_default();
-    let asset_index_path = data_root.join("shared").join("assets").join("indexes").join(format!("{asset_index_id}.json"));
+    let asset_index_path = data_root
+        .join("shared")
+        .join("assets")
+        .join("indexes")
+        .join(format!("{asset_index_id}.json"));
     let asset_index: Option<AssetIndex> = fs::read(&asset_index_path)
         .ok()
         .and_then(|bytes| serde_json::from_slice(&bytes).ok());
@@ -795,7 +905,9 @@ fn inspect_instance(
             invalid_assets += 1;
         } else {
             for object in index.objects.values() {
-                if object.hash.len() != 40 || !object.hash.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                if object.hash.len() != 40
+                    || !object.hash.bytes().all(|byte| byte.is_ascii_hexdigit())
+                {
                     invalid_assets += 1;
                     continue;
                 }
@@ -811,7 +923,9 @@ fn inspect_instance(
                         if metadata.len() != object.size {
                             invalid_assets += 1;
                         } else if deep {
-                            if safe_file_sha1(&path).is_ok_and(|actual| actual.eq_ignore_ascii_case(&hash)) {
+                            if safe_file_sha1(&path)
+                                .is_ok_and(|actual| actual.eq_ignore_ascii_case(&hash))
+                            {
                                 // Verified against the content-addressed official hash.
                             } else {
                                 invalid_assets += 1;
@@ -829,8 +943,16 @@ fn inspect_instance(
         checks,
         &format!("instance.{instance_id}.assets"),
         "integrity",
-        if missing_assets == 0 && invalid_assets == 0 { "info" } else { "error" },
-        if missing_assets == 0 && invalid_assets == 0 { "passed" } else { "failed" },
+        if missing_assets == 0 && invalid_assets == 0 {
+            "info"
+        } else {
+            "error"
+        },
+        if missing_assets == 0 && invalid_assets == 0 {
+            "passed"
+        } else {
+            "failed"
+        },
         "Minecraft assets",
         if asset_index.is_some() {
             format!("{asset_count} asset objects scanned; {missing_assets} missing; {invalid_assets} invalid. {}", if deep { "Every indexed object was SHA-1 verified." } else { "Quick mode checked object presence and file size." })
@@ -838,7 +960,13 @@ fn inspect_instance(
             "The asset index is missing or invalid.".to_owned()
         },
         vec![format!("assets/indexes/{asset_index_id}.json")],
-        if missing_assets == 0 && invalid_assets == 0 { None } else { Some("Run the installer again to restore missing or corrupted asset objects.".to_owned()) },
+        if missing_assets == 0 && invalid_assets == 0 {
+            None
+        } else {
+            Some(
+                "Run the installer again to restore missing or corrupted asset objects.".to_owned(),
+            )
+        },
     );
 
     let natives_root = instance_root.join("natives");
@@ -847,12 +975,27 @@ fn inspect_instance(
         checks,
         &format!("instance.{instance_id}.natives"),
         "runtime",
-        if native_file_count > 0 { "info" } else { "error" },
-        if native_file_count > 0 { "passed" } else { "failed" },
+        if native_file_count > 0 {
+            "info"
+        } else {
+            "error"
+        },
+        if native_file_count > 0 {
+            "passed"
+        } else {
+            "failed"
+        },
         "Extracted native libraries",
         format!("{native_file_count} native files found in the isolated instance directory."),
         vec![format!("instances/{instance_id}/natives")],
-        if native_file_count > 0 { None } else { Some("Reinstall the version to download and extract its platform-native libraries.".to_owned()) },
+        if native_file_count > 0 {
+            None
+        } else {
+            Some(
+                "Reinstall the version to download and extract its platform-native libraries."
+                    .to_owned(),
+            )
+        },
     );
 
     let logs_root = instance_root.join("logs");
@@ -878,7 +1021,11 @@ fn inspect_instance(
             "info",
             "passed",
             "Minecraft latest.log captured",
-            format!("Captured the last {} lines (bounded to {} KiB).", latest_log_excerpt.len(), MAX_LOG_BYTES / 1024),
+            format!(
+                "Captured the last {} lines (bounded to {} KiB).",
+                latest_log_excerpt.len(),
+                MAX_LOG_BYTES / 1024
+            ),
             vec!["logs/latest.log".to_owned()],
             None,
         );
@@ -890,24 +1037,53 @@ fn inspect_instance(
     let mut crash_artifact_names = Vec::new();
     let mut crash_report_excerpt = Vec::new();
     if let Some(path) = latest_crash {
-        crash_artifact_names.push(path.file_name().unwrap_or_default().to_string_lossy().into_owned());
-        crash_report_excerpt.extend(excerpt_from_file(&path, MAX_CRASH_BYTES, MAX_CAPTURED_LINES));
+        crash_artifact_names.push(
+            path.file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned(),
+        );
+        crash_report_excerpt.extend(excerpt_from_file(
+            &path,
+            MAX_CRASH_BYTES,
+            MAX_CAPTURED_LINES,
+        ));
     }
     if let Some(path) = hs_err {
-        crash_artifact_names.push(path.file_name().unwrap_or_default().to_string_lossy().into_owned());
-        crash_report_excerpt.extend(excerpt_from_file(&path, MAX_CRASH_BYTES, MAX_CAPTURED_LINES));
+        crash_artifact_names.push(
+            path.file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned(),
+        );
+        crash_report_excerpt.extend(excerpt_from_file(
+            &path,
+            MAX_CRASH_BYTES,
+            MAX_CAPTURED_LINES,
+        ));
     }
     add_check(
         checks,
         &format!("instance.{instance_id}.crash-artifacts"),
         "logs",
-        if crash_artifact_names.is_empty() { "info" } else { "warning" },
-        if crash_artifact_names.is_empty() { "passed" } else { "warning" },
+        if crash_artifact_names.is_empty() {
+            "info"
+        } else {
+            "warning"
+        },
+        if crash_artifact_names.is_empty() {
+            "passed"
+        } else {
+            "warning"
+        },
         "Crash artifacts",
         if crash_artifact_names.is_empty() {
             "No Minecraft crash report or JVM hs_err file was found.".to_owned()
         } else {
-            format!("{} crash artifact(s) found; sanitized excerpts are attached to this report.", crash_artifact_names.len())
+            format!(
+                "{} crash artifact(s) found; sanitized excerpts are attached to this report.",
+                crash_artifact_names.len()
+            )
         },
         crash_artifact_names.clone(),
         None,
@@ -950,10 +1126,22 @@ fn sanitize_path(path: &Path) -> String {
 }
 
 fn summarize(checks: &[DiagnosticCheck]) -> DiagnosticSummary {
-    let passed = checks.iter().filter(|check| check.status == "passed").count();
-    let warnings = checks.iter().filter(|check| check.status == "warning").count();
-    let failures = checks.iter().filter(|check| check.status == "failed").count();
-    let information = checks.iter().filter(|check| check.status == "skipped").count();
+    let passed = checks
+        .iter()
+        .filter(|check| check.status == "passed")
+        .count();
+    let warnings = checks
+        .iter()
+        .filter(|check| check.status == "warning")
+        .count();
+    let failures = checks
+        .iter()
+        .filter(|check| check.status == "failed")
+        .count();
+    let information = checks
+        .iter()
+        .filter(|check| check.status == "skipped")
+        .count();
     DiagnosticSummary {
         overall_status: if failures > 0 {
             "critical".to_owned()
@@ -1000,8 +1188,14 @@ pub(crate) async fn run_report(
         "Operating system and architecture",
         format!("{} · {}", system.operating_system, system.architecture),
         vec![
-            format!("version: {}", system.os_version.as_deref().unwrap_or("not exposed")),
-            format!("build: {}", system.os_build.as_deref().unwrap_or("not exposed")),
+            format!(
+                "version: {}",
+                system.os_version.as_deref().unwrap_or("not exposed")
+            ),
+            format!(
+                "build: {}",
+                system.os_build.as_deref().unwrap_or("not exposed")
+            ),
         ],
         None,
     );
@@ -1009,14 +1203,31 @@ pub(crate) async fn run_report(
         &mut checks,
         "system.hardware",
         "system",
-        if system.hardware_query_status == "complete" { "info" } else { "warning" },
-        if system.hardware_query_status == "complete" { "passed" } else { "warning" },
+        if system.hardware_query_status == "complete" {
+            "info"
+        } else {
+            "warning"
+        },
+        if system.hardware_query_status == "complete" {
+            "passed"
+        } else {
+            "warning"
+        },
         "Hardware inventory",
         system.hardware_query_status.clone(),
         vec![
-            format!("CPU: {}", system.cpu_model.as_deref().unwrap_or("not exposed")),
+            format!(
+                "CPU: {}",
+                system.cpu_model.as_deref().unwrap_or("not exposed")
+            ),
             format!("logical processors: {}", system.logical_processors),
-            format!("RAM: {}", system.total_memory_bytes.map(|value| format!("{:.1} GiB", value as f64 / 1073741824.0)).unwrap_or_else(|| "not exposed".to_owned())),
+            format!(
+                "RAM: {}",
+                system
+                    .total_memory_bytes
+                    .map(|value| format!("{:.1} GiB", value as f64 / 1073741824.0))
+                    .unwrap_or_else(|| "not exposed".to_owned())
+            ),
             format!("GPU devices: {}", system.gpus.len()),
         ],
         None,
