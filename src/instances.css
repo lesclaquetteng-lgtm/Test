@@ -150,3 +150,13 @@
   .diagnostic-network-row { grid-template-columns: 8px minmax(0, 1fr) auto; }
   .diagnostic-network-row > small { display: none; }
 }
+
+.diagnostic-hypotheses { margin-top: 12px; padding: 11px; border: 1px solid rgba(225,143,111,.12); border-radius: 6px; background: rgba(225,143,111,.025); }
+.diagnostic-hypotheses-heading { display: flex; align-items: center; gap: 7px; color: #d7a18c; font: 8px var(--mono); letter-spacing: .06em; }
+.diagnostic-hypothesis { padding-top: 10px; margin-top: 9px; border-top: 1px solid rgba(210,230,209,.06); }
+.diagnostic-hypothesis-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.diagnostic-hypothesis-top strong { color: #e2e9dc; font-size: 9px; }
+.diagnostic-hypothesis > p { margin: 7px 0; color: #94a18d; font-size: 8px; line-height: 1.6; }
+.diagnostic-hypothesis details { margin-top: 8px; }
+.diagnostic-hypothesis details summary { color: #a3b394; font: 8px var(--mono); cursor: pointer; }
+.diagnostic-hypothesis details pre { max-height: 180px; margin-top: 7px; padding: 9px; overflow: auto; border-radius: 5px; background: #090d0a; color: #adb8a6; font: 8px/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
