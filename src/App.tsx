@@ -46,7 +46,6 @@ type RuntimeStatus = {
 
 type MinecraftVersion = {
   id: string;
-  version_type: string;
   versionType: string;
   releaseTime: string;
 };
