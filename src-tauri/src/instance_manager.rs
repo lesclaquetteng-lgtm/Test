@@ -1,4 +1,4 @@
-use crate::{launch, modrinth, mojang};
+use crate::{launch, loaders, modrinth, mojang};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -398,10 +398,14 @@ pub(crate) async fn repair_instance(
     marker.client_sha1 = repaired_base.client_sha1;
     marker.asset_index = repaired_base.asset_index;
     marker.version_type = repaired_base.version_type;
-    if marker.loader.as_deref() == Some("fabric") {
-        marker = modrinth::repair_fabric_loader(&data_root, &instance_id, marker).await?;
-    } else {
-        write_marker(&target_root, &marker)?;
+    match marker.loader.as_deref() {
+        Some("fabric") => {
+            marker = modrinth::repair_fabric_loader(&data_root, &instance_id, marker).await?;
+        }
+        Some("forge" | "neoforge") => {
+            marker = loaders::repair_loader(&data_root, &cache_root, &instance_id, marker).await?;
+        }
+        _ => write_marker(&target_root, &marker)?,
     }
     Ok(marker)
 }
