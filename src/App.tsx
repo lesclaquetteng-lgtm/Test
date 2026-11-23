@@ -748,6 +748,25 @@ function InstancesPage({ isDesktop, playerName, setPlayerName, memoryMb, setMemo
   const visibleVersions = matchingVersions.slice(0, versionLimit);
   const selected = catalog?.versions.find((version) => version.id === selectedVersion);
   const selectedIsInstalled = instances.some((instance) => instance.id === selectedVersion);
+  const selectedMatchesFilter = matchingVersions.some((version) => version.id === selectedVersion);
+
+  const chooseVersionFilter = (filter: "release" | "snapshot" | "all") => {
+    setVersionFilter(filter);
+    setVersionLimit(12);
+    const firstVersion = catalog?.versions.find((version) => filter === "all" || version.versionType === filter);
+    if (firstVersion) setSelectedVersion(firstVersion.id);
+  };
+
+  const searchVersions = (value: string) => {
+    setVersionSearch(value);
+    setVersionLimit(12);
+    const query = value.trim().toLowerCase();
+    const firstMatch = (catalog?.versions ?? []).find((version) => {
+      const matchesType = versionFilter === "all" || version.versionType === versionFilter;
+      return matchesType && (!query || version.id.toLowerCase().includes(query));
+    });
+    if (firstMatch) setSelectedVersion(firstMatch.id);
+  };
   const progressPercent = progress
     ? progress.phase === "completed"
       ? 100
@@ -798,23 +817,20 @@ function InstancesPage({ isDesktop, playerName, setPlayerName, memoryMb, setMemo
             <input
               type="search"
               value={versionSearch}
-              onChange={(event) => {
-                setVersionSearch(event.target.value);
-                setVersionLimit(12);
-              }}
+              onChange={(event) => searchVersions(event.target.value)}
               placeholder="Search Minecraft versions…"
               aria-label="Search Minecraft versions"
               disabled={loading || installing}
             />
           </label>
           <div className="nova-catalog-tabs" role="group" aria-label="Version type">
-            <button type="button" className={versionFilter === "release" ? "active" : ""} onClick={() => { setVersionFilter("release"); setVersionLimit(12); }}>
+            <button type="button" className={versionFilter === "release" ? "active" : ""} onClick={() => chooseVersionFilter("release")}>
               Releases
             </button>
-            <button type="button" className={versionFilter === "snapshot" ? "active" : ""} onClick={() => { setVersionFilter("snapshot"); setVersionLimit(12); }}>
+            <button type="button" className={versionFilter === "snapshot" ? "active" : ""} onClick={() => chooseVersionFilter("snapshot")}>
               Snapshots
             </button>
-            <button type="button" className={versionFilter === "all" ? "active" : ""} onClick={() => { setVersionFilter("all"); setVersionLimit(12); }}>
+            <button type="button" className={versionFilter === "all" ? "active" : ""} onClick={() => chooseVersionFilter("all")}>
               All
             </button>
           </div>
@@ -878,10 +894,10 @@ function InstancesPage({ isDesktop, playerName, setPlayerName, memoryMb, setMemo
           <button
             className="instance-install-button nova-selected-install"
             onClick={() => void install()}
-            disabled={loading || installing || !selectedVersion || selectedIsInstalled}
+            disabled={loading || installing || !selectedVersion || selectedIsInstalled || !selectedMatchesFilter}
           >
             {installing ? <RefreshCw size={15} className="spin" /> : selectedIsInstalled ? <CheckCircle2 size={15} /> : <Download size={15} />}
-            {installing ? "Installing…" : selectedIsInstalled ? "Already installed" : "Install Vanilla"}
+            {installing ? "Installing…" : selectedIsInstalled ? "Already installed" : selectedMatchesFilter ? "Install Vanilla" : "Choose a result"}
           </button>
         </div>
 
