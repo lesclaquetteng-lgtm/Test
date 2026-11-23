@@ -2,12 +2,11 @@ use crate::{launch, modrinth, mojang};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
     process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
 use tauri::Manager;
-use tokio::sync::Mutex;
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -95,7 +94,7 @@ async fn read_marker(
         .map_err(|error| error.to_string())?;
     let marker: mojang::InstalledInstance =
         serde_json::from_slice(&bytes).map_err(|error| format!("Invalid instance marker: {error}"))?;
-    if marker.id != instance_id || marker.instance_path != root.to_string_lossy() {
+    if marker.id != instance_id || marker.instance_path != root.to_string_lossy().as_ref() {
         return Err("Instance marker does not match its NOVA-managed directory".to_owned());
     }
     if marker.client_sha1.len() != 40
@@ -319,6 +318,9 @@ pub(crate) async fn repair_instance(
     if !safe_id(&game_version) {
         return Err("This profile has an invalid base Minecraft version".to_owned());
     }
+    if marker.loader.is_some() && marker.loader.as_deref() != Some("fabric") {
+        return Err("Repair for this loader is not available yet. The instance was left unchanged.".to_owned());
+    }
 
     // Re-run the official Vanilla installer to backfill missing client, asset, library and native files.
     let repaired_base = mojang::install_vanilla(&data_root, &cache_root, &game_version, None).await?;
@@ -363,7 +365,7 @@ pub(crate) fn open_instance_folder(
     let marker = fs::read(root.join(".nova-install.json")).map_err(|error| error.to_string())?;
     let parsed: mojang::InstalledInstance =
         serde_json::from_slice(&marker).map_err(|error| error.to_string())?;
-    if parsed.id != instance_id || parsed.instance_path != root.to_string_lossy() {
+    if parsed.id != instance_id || parsed.instance_path != root.to_string_lossy().as_ref() {
         return Err("Instance marker does not match its directory".to_owned());
     }
     let mut command = if cfg!(windows) {
