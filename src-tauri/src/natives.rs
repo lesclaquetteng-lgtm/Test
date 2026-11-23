@@ -53,7 +53,8 @@ fn safe_entry_path(raw: &str) -> Result<PathBuf, NativeError> {
         let upper = name.to_ascii_uppercase();
         let device_stem = upper.split('.').next().unwrap_or_default();
         if name.is_empty()
-            || name.ends_with(['.', ' '])
+            || name.ends_with('.')
+            || name.ends_with(' ')
             || name.contains(':')
             || matches!(
                 device_stem,
@@ -233,7 +234,7 @@ async fn extract_archives_inner(
 
     let extracted = tokio::task::spawn_blocking(move || extract_sync(&archives, &stage_for_worker))
         .await
-    .map_err(|error| NativeError::Worker(error.to_string()))?;
+        .map_err(|error| NativeError::Worker(error.to_string()))?;
 
     let extracted = match extracted {
         Ok(bytes) => bytes,
