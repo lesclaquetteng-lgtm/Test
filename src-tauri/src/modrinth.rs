@@ -1311,10 +1311,10 @@ pub(crate) async fn set_instance_mod_enabled(
     }
 
     let destination_name = if enabled {
-        safe_name
-            .strip_suffix(".disabled")
-            .ok_or_else(|| "Disabled mod file has an invalid name".to_owned())?
-            .to_owned()
+        if !safe_name.to_ascii_lowercase().ends_with(".jar.disabled") {
+            return Err("Disabled mod file has an invalid name".to_owned());
+        }
+        safe_name[..safe_name.len() - ".disabled".len()].to_owned()
     } else {
         format!("{safe_name}.disabled")
     };
