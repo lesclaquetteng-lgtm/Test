@@ -23,7 +23,9 @@ import {
   Settings2,
   ShieldCheck,
   TerminalSquare,
-  UserRound
+  UserRound,
+  Trash2,
+  ExternalLink
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -57,7 +59,44 @@ type InstalledInstance = {
   instancePath: string;
   clientSha1: string;
   assetIndex: string;
+  gameVersion?: string | null;
+  loader?: string | null;
+  loaderVersion?: string | null;
+  instanceType?: string | null;
+  displayName?: string | null;
+  modrinthProjectId?: string | null;
+  modrinthVersionId?: string | null;
 };
+type ModrinthProject = {
+  project_id: string;
+  project_type: string;
+  title: string;
+  description: string;
+  author: string;
+  icon_url?: string | null;
+  downloads: number;
+  follows: number;
+  categories: string[];
+  versions: string[];
+  latest_version?: string | null;
+  date_modified?: string | null;
+};
+type ModrinthSearchResult = { hits: ModrinthProject[]; offset: number; limit: number; total_hits: number };
+type ModrinthFile = { url: string; filename: string; size: number; primary: boolean };
+type ModrinthVersion = {
+  id: string;
+  project_id: string;
+  name: string;
+  version_number: string;
+  game_versions: string[];
+  loaders: string[];
+  version_type: string;
+  files: ModrinthFile[];
+  date_published?: string;
+  downloads: number;
+};
+type FabricLoaderVersion = { version: string; stable: boolean };
+type InstalledModFile = { fileName: string; size: number };
 type InstallProgress = {
   phase: string;
   completedFiles: number;
@@ -173,14 +212,14 @@ const PAGE_INFO: Record<Page, { eyebrow: string; title: string; description: str
     description: "Manage the local offline profile used when launching Minecraft."
   },
   modpacks: {
-    eyebrow: "DISCOVER SOMETHING NEW",
+    eyebrow: "MODRINTH LIBRARY",
     title: "Modpacks",
-    description: "Find a new way to play. Provider-powered discovery is on the roadmap."
+    description: "Discover community modpacks and install supported Fabric packs into isolated NOVA profiles."
   },
   mods: {
-    eyebrow: "MAKE IT YOURS",
+    eyebrow: "MODRINTH LIBRARY",
     title: "Mods",
-    description: "Manage compatible mods for each instance without mixing configurations."
+    description: "Search compatible Fabric mods, install required dependencies and manage files per instance."
   },
   downloads: {
     eyebrow: "TRANSFER CENTER",
@@ -277,6 +316,8 @@ function Topbar({
   const primary = [
     { id: "overview" as Page, label: "Home" },
     { id: "instances" as Page, label: "Versions" },
+    { id: "mods" as Page, label: "Mods" },
+    { id: "modpacks" as Page, label: "Modpacks" },
     { id: "accounts" as Page, label: "Accounts" }
   ];
 
@@ -409,8 +450,10 @@ function HomePage({
   }, [isDesktop]);
 
   const selected = instances.find((instance) => instance.id === selectedId) ?? instances[0] ?? null;
-  const featuredVersion = selected?.id ?? catalog?.latest.release ?? "Minecraft";
-  const featuredType = selected?.versionType ?? "Java Edition";
+  const featuredVersion = selected?.displayName || selected?.id || catalog?.latest.release || "Minecraft";
+  const featuredType = selected?.loader
+    ? selected.loader + " " + (selected.loaderVersion || "")
+    : selected?.versionType ?? "Java Edition";
 
   const launch = async () => {
     if (!isDesktop) {
@@ -557,8 +600,8 @@ function HomePage({
                   <span className="nova-version-badge">{instance.versionType}</span>
                 </span>
                 <span className="nova-version-card-copy">
-                  <strong>{instance.id}</strong>
-                  <small>{formatBytes(instance.totalBytes)} · {instance.files} verified files</small>
+                  <strong>{instance.displayName || instance.id}</strong>
+                  <small>{instance.gameVersion || instance.id} · {instance.loader || instance.versionType} · {formatBytes(instance.totalBytes)}</small>
                 </span>
                 <span className="nova-card-arrow"><ArrowRight size={15} /></span>
               </button>
@@ -935,8 +978,8 @@ function InstancesPage({ isDesktop, playerName, setPlayerName, memoryMb, setMemo
             {instances.map((instance) => (
               <article className="instance-card" key={instance.id}>
                 <div className="instance-card-top">
-                  <strong>{instance.id}</strong>
-                  <span className="instance-type">{instance.versionType}</span>
+                  <strong>{instance.displayName || instance.id}</strong>
+                  <span className="instance-type">{instance.loader ? instance.loader + " " + (instance.loaderVersion || "") : instance.versionType}</span>
                 </div>
                 <div className="instance-card-meta">
                   <span>{formatBytes(instance.totalBytes)}</span>
@@ -988,6 +1031,543 @@ function InstancesPage({ isDesktop, playerName, setPlayerName, memoryMb, setMemo
     </div>
   );
 }
+
+
+function ModrinthProjectIcon({ project, compact = false }: { project: ModrinthProject; compact?: boolean }) {
+  return (
+    <span className={compact ? "modrinth-project-icon compact" : "modrinth-project-icon"}>
+      {project.icon_url ? <img src={project.icon_url} alt="" loading="lazy" /> : <Puzzle size={compact ? 17 : 22} />}
+    </span>
+  );
+}
+
+function ModrinthModsPage({ isDesktop, onNavigate }: {
+  isDesktop: boolean;
+  onNavigate: (page: Page) => void;
+}) {
+  const [instances, setInstances] = useState<InstalledInstance[]>([]);
+  const [selectedInstanceId, setSelectedInstanceId] = useState("");
+  const [installedMods, setInstalledMods] = useState<InstalledModFile[]>([]);
+  const [query, setQuery] = useState("");
+  const [projects, setProjects] = useState<ModrinthProject[]>([]);
+  const [totalHits, setTotalHits] = useState(0);
+  const [loadingInstances, setLoadingInstances] = useState(true);
+  const [searching, setSearching] = useState(false);
+  const [installingFabric, setInstallingFabric] = useState(false);
+  const [installingProject, setInstallingProject] = useState("");
+  const [removingFile, setRemovingFile] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState("");
+
+  const selectedInstance = instances.find((instance) => instance.id === selectedInstanceId) ?? null;
+  const gameVersion = selectedInstance?.gameVersion || selectedInstance?.id || "";
+  const fabricReady = selectedInstance?.loader === "fabric";
+
+  const refreshInstances = useCallback(async () => {
+    if (!isDesktop) {
+      setLoadingInstances(false);
+      return;
+    }
+    setLoadingInstances(true);
+    try {
+      const next = await invoke<InstalledInstance[]>("list_installed_instances");
+      setInstances(next);
+      setSelectedInstanceId((current) => current && next.some((item) => item.id === current)
+        ? current
+        : next.find((item) => item.loader === "fabric")?.id ?? next[0]?.id ?? "");
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setLoadingInstances(false);
+    }
+  }, [isDesktop]);
+
+  useEffect(() => {
+    void refreshInstances();
+  }, [refreshInstances]);
+
+  const refreshInstalledMods = useCallback(async () => {
+    if (!isDesktop || !selectedInstanceId) {
+      setInstalledMods([]);
+      return;
+    }
+    try {
+      const files = await invoke<InstalledModFile[]>("list_instance_mods", { instanceId: selectedInstanceId });
+      setInstalledMods(files);
+    } catch (cause) {
+      setInstalledMods([]);
+      setError(String(cause));
+    }
+  }, [isDesktop, selectedInstanceId]);
+
+  useEffect(() => {
+    void refreshInstalledMods();
+  }, [refreshInstalledMods]);
+
+  const searchProjects = useCallback(async () => {
+    if (!isDesktop) return;
+    setSearching(true);
+    setError(null);
+    try {
+      const result = await invoke<ModrinthSearchResult>("search_projects", {
+        query,
+        projectType: "mod",
+        gameVersion: gameVersion || null,
+        loader: "fabric",
+        offset: 0
+      });
+      setProjects(result.hits);
+      setTotalHits(result.total_hits);
+    } catch (cause) {
+      setError(String(cause));
+      setProjects([]);
+      setTotalHits(0);
+    } finally {
+      setSearching(false);
+    }
+  }, [isDesktop, query, gameVersion]);
+
+  useEffect(() => {
+    if (!isDesktop) return;
+    const timer = window.setTimeout(() => void searchProjects(), 280);
+    return () => window.clearTimeout(timer);
+  }, [isDesktop, searchProjects]);
+
+  const activateFabric = async () => {
+    if (!selectedInstance) return;
+    setInstallingFabric(true);
+    setError(null);
+    setNotice("");
+    try {
+      const loaders = await invoke<FabricLoaderVersion[]>("get_fabric_loader_versions", { gameVersion });
+      const stable = loaders.find((item) => item.stable) ?? loaders[0];
+      if (!stable) throw new Error("No Fabric loader is published for this Minecraft version.");
+      await invoke("install_fabric_loader", {
+        instanceId: selectedInstance.id,
+        loaderVersion: stable.version
+      });
+      setNotice("Fabric " + stable.version + " is ready for Minecraft " + gameVersion + ".");
+      await refreshInstances();
+      await refreshInstalledMods();
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setInstallingFabric(false);
+    }
+  };
+
+  const installProject = async (project: ModrinthProject) => {
+    if (!selectedInstance || !fabricReady) return;
+    setInstallingProject(project.project_id);
+    setError(null);
+    setNotice("");
+    try {
+      const result = await invoke<{ installedFiles: string[] }>("install_modrinth_mod", {
+        instanceId: selectedInstance.id,
+        projectId: project.project_id
+      });
+      setNotice(project.title + ": " + result.installedFiles.length + " mod file(s) installed, including required dependencies.");
+      await refreshInstalledMods();
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setInstallingProject("");
+    }
+  };
+
+  const removeMod = async (fileName: string) => {
+    if (!selectedInstance) return;
+    setRemovingFile(fileName);
+    setError(null);
+    try {
+      await invoke("remove_instance_mod", { instanceId: selectedInstance.id, fileName });
+      setInstalledMods((current) => current.filter((file) => file.fileName !== fileName));
+      setNotice(fileName + " removed from this instance.");
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setRemovingFile("");
+    }
+  };
+
+  if (!isDesktop) {
+    return (
+      <EmptyPage
+        icon={Puzzle}
+        eyebrow="MODRINTH MOD LIBRARY"
+        title="Open NOVA Desktop to manage mods."
+        description="Mod discovery requires the native installer to download files, verify their hashes and place them in an isolated Minecraft instance."
+        actionLabel="Browse versions"
+        onAction={() => onNavigate("instances")}
+      />
+    );
+  }
+
+  return (
+    <div className="modrinth-page">
+      <section className="modrinth-intro">
+        <div className="modrinth-intro-mark"><Puzzle size={22} /></div>
+        <div>
+          <span className="section-eyebrow">MODRINTH · FABRIC</span>
+          <h2>Your next Minecraft setup starts here.</h2>
+          <p>Search real projects, match the selected Minecraft version, and install required dependencies into one isolated profile.</p>
+        </div>
+        <a href="https://modrinth.com/mods" target="_blank" rel="noreferrer" className="modrinth-provider-link">
+          Modrinth <ExternalLink size={13} />
+        </a>
+      </section>
+
+      <section className="modrinth-target panel">
+        <div className="modrinth-target-copy">
+          <span className="section-eyebrow">INSTALL TARGET</span>
+          <strong>{selectedInstance?.displayName || selectedInstance?.id || "No instance selected"}</strong>
+          <small>
+            {selectedInstance
+              ? gameVersion + " · " + (selectedInstance.loader ? selectedInstance.loader + " " + (selectedInstance.loaderVersion || "") : "Vanilla profile")
+              : loadingInstances ? "Loading local profiles…" : "Install a Minecraft version first."}
+          </small>
+        </div>
+        <label className="modrinth-instance-select">
+          <span>Instance</span>
+          <select value={selectedInstanceId} onChange={(event) => setSelectedInstanceId(event.target.value)} disabled={loadingInstances || instances.length === 0}>
+            {instances.length === 0 && <option value="">No installed instances</option>}
+            {instances.map((instance) => (
+              <option key={instance.id} value={instance.id}>
+                {(instance.displayName || instance.id) + " · " + (instance.loader || "Vanilla")}
+              </option>
+            ))}
+          </select>
+        </label>
+        {selectedInstance && (
+          fabricReady ? (
+            <span className="modrinth-status success"><CheckCircle2 size={14} /> Fabric ready</span>
+          ) : (
+            <button className="modrinth-primary-button" onClick={() => void activateFabric()} disabled={installingFabric}>
+              {installingFabric ? <RefreshCw size={14} className="spin" /> : <Download size={14} />}
+              {installingFabric ? "Setting up Fabric…" : "Set up Fabric"}
+            </button>
+          )
+        )}
+      </section>
+
+      <section className="modrinth-section">
+        <div className="modrinth-section-heading">
+          <div>
+            <span className="section-eyebrow">DISCOVER PROJECTS</span>
+            <h2>Explore mods</h2>
+          </div>
+          <span className="modrinth-result-count">{searching ? "Searching…" : totalHits.toLocaleString() + " projects"}</span>
+        </div>
+        <div className="modrinth-search-row">
+          <label className="modrinth-search">
+            <ScanSearch size={17} />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void searchProjects(); }} placeholder="Search Sodium, Iris, minimaps…" />
+            {query && <button type="button" onClick={() => setQuery("")} aria-label="Clear search">×</button>}
+          </label>
+          <button className="modrinth-search-button" onClick={() => void searchProjects()} disabled={searching}>
+            {searching ? <RefreshCw size={15} className="spin" /> : <ScanSearch size={15} />}
+            Search
+          </button>
+        </div>
+        {!fabricReady && selectedInstance && (
+          <p className="modrinth-inline-warning">
+            <ShieldCheck size={15} /> Browse now, but installing mods requires Fabric on the selected profile. NOVA keeps Vanilla files separate.
+          </p>
+        )}
+        {error && <div className="modrinth-alert" role="alert">{error}</div>}
+        {notice && <div className="modrinth-notice" role="status">{notice}</div>}
+        <div className="modrinth-project-grid">
+          {projects.map((project) => (
+            <article className="modrinth-project-card" key={project.project_id}>
+              <div className="modrinth-project-card-head">
+                <ModrinthProjectIcon project={project} />
+                <div className="modrinth-project-heading">
+                  <strong>{project.title}</strong>
+                  <small>by {project.author}</small>
+                </div>
+                <a href={"https://modrinth.com/mod/" + project.project_id} target="_blank" rel="noreferrer" aria-label={"Open " + project.title + " on Modrinth"} className="modrinth-external-link">
+                  <ExternalLink size={14} />
+                </a>
+              </div>
+              <p>{project.description}</p>
+              <div className="modrinth-project-meta">
+                <span><Download size={12} /> {project.downloads.toLocaleString()}</span>
+                <span>{project.versions.length} game versions</span>
+                {project.categories.slice(0, 2).map((category) => <i key={category}>{category}</i>)}
+              </div>
+              <button
+                type="button"
+                className="modrinth-project-action"
+                onClick={() => void installProject(project)}
+                disabled={!fabricReady || Boolean(installingProject)}
+              >
+                {installingProject === project.project_id ? <RefreshCw size={14} className="spin" /> : <Download size={14} />}
+                {installingProject === project.project_id ? "Installing dependencies…" : "Install mod"}
+              </button>
+            </article>
+          ))}
+          {!searching && projects.length === 0 && (
+            <div className="modrinth-empty">
+              <Puzzle size={21} />
+              <strong>No matching mods found</strong>
+              <span>Try another project name or check your network connection.</span>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="modrinth-section modrinth-installed-section">
+        <div className="modrinth-section-heading">
+          <div>
+            <span className="section-eyebrow">LOCAL INSTANCE</span>
+            <h2>Installed mods</h2>
+          </div>
+          <span className="modrinth-result-count">{installedMods.length} files</span>
+        </div>
+        {installedMods.length > 0 ? (
+          <div className="modrinth-installed-list">
+            {installedMods.map((file) => (
+              <div className="modrinth-installed-row" key={file.fileName}>
+                <span className="modrinth-installed-icon"><Puzzle size={15} /></span>
+                <div><strong>{file.fileName}</strong><small>{formatBytes(file.size)}</small></div>
+                <button type="button" className="modrinth-remove-button" onClick={() => void removeMod(file.fileName)} disabled={Boolean(removingFile)} title={"Remove " + file.fileName}>
+                  {removingFile === file.fileName ? <RefreshCw size={14} className="spin" /> : <Trash2 size={14} />}
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="modrinth-empty compact">
+            <Layers3 size={19} />
+            <span>No mod JAR files are installed in this profile yet.</span>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function ModrinthModpacksPage({ isDesktop, onNavigate }: {
+  isDesktop: boolean;
+  onNavigate: (page: Page) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [projects, setProjects] = useState<ModrinthProject[]>([]);
+  const [selectedProject, setSelectedProject] = useState("");
+  const [versions, setVersions] = useState<ModrinthVersion[]>([]);
+  const [instances, setInstances] = useState<InstalledInstance[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [loadingVersions, setLoadingVersions] = useState(false);
+  const [installingVersion, setInstallingVersion] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState("");
+
+  const installedPacks = instances.filter((instance) => instance.instanceType === "modpack");
+
+  const refreshInstances = useCallback(async () => {
+    if (!isDesktop) return;
+    try {
+      setInstances(await invoke<InstalledInstance[]>("list_installed_instances"));
+    } catch (cause) {
+      setError(String(cause));
+    }
+  }, [isDesktop]);
+
+  useEffect(() => {
+    void refreshInstances();
+  }, [refreshInstances]);
+
+  const searchProjects = useCallback(async () => {
+    if (!isDesktop) return;
+    setSearching(true);
+    setError(null);
+    try {
+      const result = await invoke<ModrinthSearchResult>("search_projects", {
+        query,
+        projectType: "modpack",
+        gameVersion: null,
+        loader: null,
+        offset: 0
+      });
+      setProjects(result.hits);
+    } catch (cause) {
+      setError(String(cause));
+      setProjects([]);
+    } finally {
+      setSearching(false);
+    }
+  }, [isDesktop, query]);
+
+  useEffect(() => {
+    if (!isDesktop) return;
+    const timer = window.setTimeout(() => void searchProjects(), 280);
+    return () => window.clearTimeout(timer);
+  }, [isDesktop, searchProjects]);
+
+  const loadVersions = async (project: ModrinthProject) => {
+    if (selectedProject === project.project_id) {
+      setSelectedProject("");
+      setVersions([]);
+      return;
+    }
+    setSelectedProject(project.project_id);
+    setLoadingVersions(true);
+    setError(null);
+    setVersions([]);
+    try {
+      const result = await invoke<ModrinthVersion[]>("get_project_versions_command", {
+        projectId: project.project_id,
+        gameVersion: null,
+        loader: null
+      });
+      setVersions(result);
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setLoadingVersions(false);
+    }
+  };
+
+  const installPack = async (project: ModrinthProject, version: ModrinthVersion) => {
+    setInstallingVersion(version.id);
+    setError(null);
+    setNotice("");
+    try {
+      const installed = await invoke<InstalledInstance>("install_modrinth_modpack", {
+        projectId: project.project_id,
+        versionId: version.id
+      });
+      setNotice((installed.displayName || project.title) + " installed as " + installed.id + ". It is now available in Versions and Home.");
+      await refreshInstances();
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setInstallingVersion("");
+    }
+  };
+
+  if (!isDesktop) {
+    return (
+      <EmptyPage
+        icon={Package}
+        eyebrow="MODRINTH MODPACKS"
+        title="Open NOVA Desktop to install modpacks."
+        description="Modpack installation downloads the official .mrpack archive, validates its file hashes, applies safe client overrides and creates an isolated game profile."
+        actionLabel="Browse versions"
+        onAction={() => onNavigate("instances")}
+      />
+    );
+  }
+
+  return (
+    <div className="modrinth-page">
+      <section className="modrinth-intro modrinth-pack-intro">
+        <div className="modrinth-intro-mark"><Package size={22} /></div>
+        <div>
+          <span className="section-eyebrow">MODRINTH · .MRPACK</span>
+          <h2>Whole worlds, ready to install.</h2>
+          <p>Install supported Fabric modpacks as separate profiles. NOVA checks archive hashes, downloads client files and applies overrides safely.</p>
+        </div>
+        <a href="https://modrinth.com/modpacks" target="_blank" rel="noreferrer" className="modrinth-provider-link">
+          Browse Modrinth <ExternalLink size={13} />
+        </a>
+      </section>
+
+      <section className="modrinth-section">
+        <div className="modrinth-section-heading">
+          <div><span className="section-eyebrow">DISCOVER PACKS</span><h2>Find a new way to play</h2></div>
+          <span className="modrinth-result-count">{searching ? "Searching…" : projects.length + " shown"}</span>
+        </div>
+        <div className="modrinth-search-row">
+          <label className="modrinth-search">
+            <ScanSearch size={17} />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void searchProjects(); }} placeholder="Search modpacks…" />
+            {query && <button type="button" onClick={() => setQuery("")} aria-label="Clear search">×</button>}
+          </label>
+          <button className="modrinth-search-button" onClick={() => void searchProjects()} disabled={searching}>
+            {searching ? <RefreshCw size={15} className="spin" /> : <ScanSearch size={15} />}
+            Search
+          </button>
+        </div>
+        {error && <div className="modrinth-alert" role="alert">{error}</div>}
+        {notice && <div className="modrinth-notice" role="status">{notice}</div>}
+        <div className="modrinth-pack-grid">
+          {projects.map((project) => (
+            <article className={selectedProject === project.project_id ? "modrinth-project-card selected" : "modrinth-project-card"} key={project.project_id}>
+              <div className="modrinth-project-card-head">
+                <ModrinthProjectIcon project={project} />
+                <div className="modrinth-project-heading">
+                  <strong>{project.title}</strong>
+                  <small>by {project.author}</small>
+                </div>
+                <a href={"https://modrinth.com/modpack/" + project.project_id} target="_blank" rel="noreferrer" aria-label={"Open " + project.title + " on Modrinth"} className="modrinth-external-link">
+                  <ExternalLink size={14} />
+                </a>
+              </div>
+              <p>{project.description}</p>
+              <div className="modrinth-project-meta">
+                <span><Download size={12} /> {project.downloads.toLocaleString()}</span>
+                <span>{project.versions.length} game versions</span>
+                {project.categories.slice(0, 2).map((category) => <i key={category}>{category}</i>)}
+              </div>
+              <button type="button" className="modrinth-project-action" onClick={() => void loadVersions(project)} disabled={loadingVersions}>
+                {loadingVersions && selectedProject === project.project_id ? <RefreshCw size={14} className="spin" /> : <Layers3 size={14} />}
+                {selectedProject === project.project_id ? "Hide versions" : "Choose version"}
+              </button>
+              {selectedProject === project.project_id && (
+                <div className="modrinth-version-list">
+                  {loadingVersions ? <span className="modrinth-version-loading">Loading releases…</span> : versions.length > 0 ? versions.slice(0, 8).map((version) => {
+                    const hasArchive = version.files.some((file) => file.filename.toLowerCase().endsWith(".mrpack"));
+                    const hasFabric = version.loaders.includes("fabric") || version.loaders.includes("minecraft") || version.loaders.length === 0;
+                    const supported = hasArchive && hasFabric;
+                    return (
+                      <div className="modrinth-version-row" key={version.id}>
+                        <div><strong>{version.version_number}</strong><small>{version.game_versions.slice(0, 3).join(", ")} · {version.loaders.join(", ") || "loader declared in pack"}</small></div>
+                        <button type="button" onClick={() => void installPack(project, version)} disabled={!supported || Boolean(installingVersion)}>
+                          {installingVersion === version.id ? <RefreshCw size={13} className="spin" /> : <Download size={13} />}
+                          {installingVersion === version.id ? "Installing…" : supported ? "Install" : "Unsupported"}
+                        </button>
+                      </div>
+                    );
+                  }) : <span className="modrinth-version-loading">No installable .mrpack release was found.</span>}
+                  <small className="modrinth-version-disclaimer">NOVA currently installs Fabric and loader-free client packs. Forge, NeoForge and Quilt packs are rejected safely.</small>
+                </div>
+              )}
+            </article>
+          ))}
+          {!searching && projects.length === 0 && (
+            <div className="modrinth-empty">
+              <Package size={21} />
+              <strong>No matching modpacks found</strong>
+              <span>Try a different search term.</span>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="modrinth-section modrinth-installed-section">
+        <div className="modrinth-section-heading">
+          <div><span className="section-eyebrow">YOUR LIBRARY</span><h2>Installed modpacks</h2></div>
+          <span className="modrinth-result-count">{installedPacks.length} profiles</span>
+        </div>
+        {installedPacks.length > 0 ? (
+          <div className="modrinth-installed-list">
+            {installedPacks.map((instance) => (
+              <div className="modrinth-installed-row" key={instance.id}>
+                <span className="modrinth-installed-icon"><Package size={15} /></span>
+                <div><strong>{instance.displayName || instance.id}</strong><small>{instance.gameVersion || instance.id} · {instance.loader || "Vanilla"} · {formatBytes(instance.totalBytes)}</small></div>
+                <span className="modrinth-status success"><CheckCircle2 size={13} /> Ready</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="modrinth-empty compact"><Package size={19} /><span>No modpacks installed yet.</span></div>
+        )}
+      </section>
+    </div>
+  );
+}
+
 
 function EmptyPage({
   icon: Icon,
@@ -1569,26 +2149,8 @@ function App() {
             {page === "overview" && <HomePage isDesktop={isDesktop} playerName={playerName} memoryMb={memoryMb} setMemoryMb={setMemoryMb} onNavigate={setPage} />}
             {page === "instances" && <InstancesPage isDesktop={isDesktop} playerName={playerName} setPlayerName={setPlayerName} memoryMb={memoryMb} setMemoryMb={setMemoryMb} />}
             {page === "accounts" && <AccountsPage playerName={playerName} onPlayerNameChange={setPlayerName} onNavigate={setPage} />}
-            {page === "modpacks" && (
-              <EmptyPage
-                icon={Package}
-                eyebrow="MODPACK DISCOVERY"
-                title="Modpack discovery is not connected yet."
-                description="NOVA currently focuses on a verified Vanilla installation path. Modrinth and CurseForge discovery will be added with compatibility and dependency handling."
-                actionLabel="Browse versions"
-                onAction={() => setPage("instances")}
-              />
-            )}
-            {page === "mods" && (
-              <EmptyPage
-                icon={Puzzle}
-                eyebrow="MOD LIBRARY"
-                title="Mod management is not available yet."
-                description="The current build does not install or manage third-party mods. This screen will be enabled after loader, dependency and rollback support is ready."
-                actionLabel="View versions"
-                onAction={() => setPage("instances")}
-              />
-            )}
+            {page === "modpacks" && <ModrinthModpacksPage isDesktop={isDesktop} onNavigate={setPage} />}
+            {page === "mods" && <ModrinthModsPage isDesktop={isDesktop} onNavigate={setPage} />}
             {page === "downloads" && (
               <EmptyPage
                 icon={Download}

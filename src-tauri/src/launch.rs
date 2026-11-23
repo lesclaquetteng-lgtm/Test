@@ -92,6 +92,20 @@ struct InstallMarker {
     id: String,
     client_sha1: String,
     asset_index: String,
+    #[serde(default)]
+    game_version: Option<String>,
+    #[serde(default)]
+    loader: Option<String>,
+    #[serde(default)]
+    loader_version: Option<String>,
+    #[serde(default)]
+    instance_type: Option<String>,
+    #[serde(default)]
+    display_name: Option<String>,
+    #[serde(default)]
+    modrinth_project_id: Option<String>,
+    #[serde(default)]
+    modrinth_version_id: Option<String>,
 }
 
 fn sha1_file(path: &Path) -> Result<String, String> {
@@ -402,6 +416,7 @@ fn build_launch_arguments(
     install: &InstallMarker,
     instance_root: &Path,
     data_root: &Path,
+    game_version: &str,
 ) -> Result<Vec<String>, String> {
     let main_class = metadata
         .get("mainClass")
@@ -416,8 +431,8 @@ fn build_launch_arguments(
     let libraries_root = data_root.join("shared").join("libraries");
     let assets_root = data_root.join("shared").join("assets");
     let natives_root = instance_root.join("natives");
-    let version_root = instance_root.join("versions").join(instance_id);
-    let client_jar = version_root.join(format!("{instance_id}.jar"));
+    let version_root = instance_root.join("versions").join(game_version);
+    let client_jar = version_root.join(format!("{game_version}.jar"));
 
     let mut classpath_entries = Vec::new();
     classpath_entries.push(client_jar);
@@ -629,8 +644,12 @@ pub(crate) async fn launch_instance(
         return Err("The instance verification marker does not match this installation".to_owned());
     }
 
-    let version_root = instance_root.join("versions").join(&instance_id);
-    let client_jar = version_root.join(format!("{instance_id}.jar"));
+    let game_version = marker.game_version.as_deref().unwrap_or(&instance_id);
+    if !safe_id(game_version) {
+        return Err("The Minecraft base version for this instance is invalid".to_owned());
+    }
+    let version_root = instance_root.join("versions").join(game_version);
+    let client_jar = version_root.join(format!("{game_version}.jar"));
     let expected_hash = marker.client_sha1.to_ascii_lowercase();
     let hash_path = client_jar.clone();
     let actual_hash = tokio::task::spawn_blocking(move || sha1_file(&hash_path))
@@ -640,17 +659,28 @@ pub(crate) async fn launch_instance(
         return Err("The Minecraft client JAR failed SHA-1 verification. Reinstall this instance before launching.".to_owned());
     }
 
-    let metadata_path = cache_root
-        .join("mojang")
-        .join("versions")
-        .join(format!("{instance_id}.json"));
+    let metadata_path = version_root.join(format!("{game_version}.json"));
     let metadata_bytes = tokio::fs::read(&metadata_path)
         .await
-        .map_err(|_| "Official version metadata is missing from the NOVA cache. Refresh the catalogue and reinstall this version.".to_owned())?;
+        .or_else(|_| {
+            std::fs::read(
+                cache_root
+                    .join("mojang")
+                    .join("versions")
+                    .join(format!("{game_version}.json")),
+            )
+        })
+        .map_err(|_| {
+            "Minecraft version metadata is missing. Repair this instance before launching."
+                .to_owned()
+        })?;
     let metadata: Value = serde_json::from_slice(&metadata_bytes)
         .map_err(|error| format!("Official version metadata is invalid: {error}"))?;
-    if metadata.get("id").and_then(Value::as_str) != Some(instance_id.as_str()) {
-        return Err("Official version metadata does not match this instance".to_owned());
+    if metadata.get("id").and_then(Value::as_str) != Some(game_version) {
+        return Err(
+            "Minecraft version metadata does not match this instance's base game version"
+                .to_owned(),
+        );
     }
     let required_java = metadata
         .get("javaVersion")
@@ -667,6 +697,7 @@ pub(crate) async fn launch_instance(
         &marker,
         &instance_root,
         &data_root,
+        game_version,
     )?;
 
     if !tokio::fs::try_exists(&instance_root.join("natives"))
