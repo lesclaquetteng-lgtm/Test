@@ -165,6 +165,14 @@ struct Library {
     rules: Vec<LibraryRule>,
     #[serde(default)]
     natives: HashMap<String, String>,
+    #[serde(default)]
+    extract: Option<LibraryExtract>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct LibraryExtract {
+    #[serde(default)]
+    exclude: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -717,6 +725,7 @@ async fn install_vanilla_inner(
     }
 
     let mut library_downloads = Vec::new();
+    let mut native_archives = Vec::<(PathBuf, Vec<String>)>::new();
     for library in &details.libraries {
         if !library_allowed(&library.rules) {
             continue;
@@ -732,8 +741,17 @@ async fn install_vanilla_inner(
         }
         if let Some(classifier) = native_classifier(library) {
             if let Some(native) = downloads.classifiers.get(&classifier) {
+                let spec = artifact_spec(native, &libraries_root)?;
+                native_archives.push((
+                    spec.destination.clone(),
+                    library
+                        .extract
+                        .as_ref()
+                        .map(|extract| extract.exclude.clone())
+                        .unwrap_or_default(),
+                ));
                 library_downloads.push(PlannedDownload {
-                    spec: artifact_spec(native, &libraries_root)?,
+                    spec,
                     display_name: native.path.clone(),
                 });
             }
@@ -745,6 +763,27 @@ async fn install_vanilla_inner(
     let (bytes, _, _) = summarize_downloads(&library_outcomes);
     total_bytes = total_bytes.saturating_add(bytes);
     total_files += library_outcomes.len();
+
+    if let Some(sender) = &progress {
+        let _ = sender
+            .send(InstallProgress {
+                phase: "extracting-natives".to_owned(),
+                completed_files: 0,
+                total_files: native_archives.len(),
+                current_file: "Preparing native libraries".to_owned(),
+                transferred_bytes: 0,
+                total_bytes: None,
+                attempt: 1,
+            })
+            .await;
+    }
+    let native_bytes = crate::natives::extract_archives(
+        native_archives,
+        instance_root.join("natives"),
+    )
+    .await
+    .map_err(MojangError::Download)?;
+    total_bytes = total_bytes.saturating_add(native_bytes);
 
     let mut unique_assets = HashMap::<String, u64>::new();
     for object in asset_index_data.objects.values() {
