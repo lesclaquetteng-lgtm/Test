@@ -23,6 +23,7 @@ The first installer milestone is implemented on the feature branch. Native archi
 - [x] Fetch and cache the official version manifest with stale-cache fallback.
 - [x] Resolve official release, snapshot and historical version metadata with manifest SHA-1 verification.
 - [x] Install the client, libraries, asset index, objects and platform-native archives with bounded downloads.
+- [x] Extract native libraries in an isolated staging directory with path, symlink, collision and decompressed-size safeguards.
 - [x] Verify downloaded artifacts and resume safely by reusing already verified files after interrupted installs.
 - [ ] Generate launch arguments from version metadata.
 - [ ] Launch and stop Minecraft while streaming logs.
