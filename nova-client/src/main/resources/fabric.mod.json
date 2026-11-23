@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "nova-client",
+  "version": "${version}",
+  "name": "NOVA Client",
+  "description": "A lightweight, configurable Minecraft client HUD and settings suite by NOVA.",
+  "authors": ["NOVA"],
+  "contact": {
+    "homepage": "https://github.com/lesclaquetteng-lgtm/Test",
+    "sources": "https://github.com/lesclaquetteng-lgtm/Test/tree/main/nova-client"
+  },
+  "license": "All-Rights-Reserved",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["com.nova.client.NovaClient"]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "${minecraft_version}",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}
