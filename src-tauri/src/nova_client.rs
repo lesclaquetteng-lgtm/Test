@@ -213,8 +213,7 @@ fn sha256(bytes: &[u8]) -> String {
 }
 
 fn parse_checksum(bytes: &[u8]) -> Result<String, String> {
-    let text = std::str::from_utf8(bytes)
-        .map_err(|_| "Checksum file is not UTF-8".to_owned())?;
+    let text = std::str::from_utf8(bytes).map_err(|_| "Checksum file is not UTF-8".to_owned())?;
     let digest = text
         .split_whitespace()
         .next()
