@@ -1,6 +1,7 @@
 package com.nova.client.telemetry;
 
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.util.math.MathHelper;
 
@@ -11,7 +12,7 @@ public final class ClientTelemetry {
     private static int tickCounter;
     private static int usedMemoryMb;
     private static int maxMemoryMb;
-    private static volatile Snapshot snapshot = new Snapshot(0, -1, 0, 0, 0, 0, 0.0f, 0, 0);
+    private static volatile Snapshot snapshot = new Snapshot(0, -1, 0, 0, 0, 0, 0.0f, 0, 0, -1, -1, -1, -1, "--");
 
     private ClientTelemetry() { }
 
@@ -38,10 +39,20 @@ public final class ClientTelemetry {
         int x = 0;
         int y = 0;
         int z = 0;
+        int helmet = -1;
+        int chest = -1;
+        int leggings = -1;
+        int boots = -1;
+        String direction = "--";
         if (client.player != null) {
             x = MathHelper.floor(client.player.getX());
             y = MathHelper.floor(client.player.getY());
             z = MathHelper.floor(client.player.getZ());
+            helmet = armorPercent(client.player.getEquippedStack(EquipmentSlot.HEAD));
+            chest = armorPercent(client.player.getEquippedStack(EquipmentSlot.CHEST));
+            leggings = armorPercent(client.player.getEquippedStack(EquipmentSlot.LEGS));
+            boots = armorPercent(client.player.getEquippedStack(EquipmentSlot.FEET));
+            direction = client.player.getHorizontalFacing().asString().toUpperCase(java.util.Locale.ROOT);
             if (client.getNetworkHandler() != null) {
                 PlayerListEntry entry = client.getNetworkHandler().getPlayerListEntry(client.player.getUuid());
                 if (entry != null) ping = entry.getLatency();
@@ -56,7 +67,8 @@ public final class ClientTelemetry {
             usedMemoryMb = (int) ((runtime.totalMemory() - runtime.freeMemory()) / (1024L * 1024L));
             maxMemoryMb = (int) Math.min(Integer.MAX_VALUE, runtime.maxMemory() / (1024L * 1024L));
         }
-        snapshot = new Snapshot(fps, ping, cps, x, y, z, frameTime, usedMemoryMb, maxMemoryMb);
+        snapshot = new Snapshot(fps, ping, cps, x, y, z, frameTime, usedMemoryMb, maxMemoryMb,
+                helmet, chest, leggings, boots, direction);
     }
 
     private static int countRecentClicks(long now) {
@@ -69,10 +81,20 @@ public final class ClientTelemetry {
         return count;
     }
 
+    private static int armorPercent(net.minecraft.item.ItemStack stack) {
+        if (stack.isEmpty()) return -1;
+        int maximum = stack.getMaxDamage();
+        if (maximum <= 0) return 100;
+        int remaining = maximum - stack.getDamage();
+        return Math.max(0, Math.min(100, (remaining * 100) / maximum));
+    }
+
     public static Snapshot snapshot() { return snapshot; }
 
     public record Snapshot(
             int fps, int ping, int leftCps, int x, int y, int z,
-            float frameTimeMs, int usedMemoryMb, int maxMemoryMb
+            float frameTimeMs, int usedMemoryMb, int maxMemoryMb,
+            int helmetDurability, int chestDurability, int leggingsDurability, int bootsDurability,
+            String direction
     ) { }
 }
