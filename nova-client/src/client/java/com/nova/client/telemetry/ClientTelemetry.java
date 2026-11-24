@@ -1,5 +1,6 @@
 package com.nova.client.telemetry;
 
+import com.nova.client.util.HudMath;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.client.network.PlayerListEntry;
@@ -60,8 +61,8 @@ public final class ClientTelemetry {
         }
 
         long now = System.currentTimeMillis();
-        int cps = countRecentClicks(now);
-        float frameTime = fps > 0 ? 1000.0f / fps : 0.0f;
+        int cps = HudMath.countWithinWindow(LEFT_CLICKS, clickSize, now, 1000L);
+        float frameTime = HudMath.frameTimeEstimateFromFps(fps);
         if (tickCounter % 20 == 0) {
             Runtime runtime = Runtime.getRuntime();
             usedMemoryMb = (int) ((runtime.totalMemory() - runtime.freeMemory()) / (1024L * 1024L));
@@ -71,22 +72,12 @@ public final class ClientTelemetry {
                 helmet, chest, leggings, boots, direction);
     }
 
-    private static int countRecentClicks(long now) {
-        long cutoff = now - 1000L;
-        int count = 0;
-        for (int index = 0; index < clickSize; index++) {
-            long timestamp = LEFT_CLICKS[index];
-            if (timestamp >= cutoff && timestamp <= now) count++;
-        }
-        return count;
-    }
-
     private static int armorPercent(net.minecraft.item.ItemStack stack) {
         if (stack.isEmpty()) return -1;
         int maximum = stack.getMaxDamage();
         if (maximum <= 0) return 100;
         int remaining = maximum - stack.getDamage();
-        return Math.max(0, Math.min(100, (remaining * 100) / maximum));
+        return HudMath.durabilityPercent(maximum, stack.getDamage());
     }
 
     public static Snapshot snapshot() { return snapshot; }

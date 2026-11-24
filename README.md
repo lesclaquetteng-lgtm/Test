@@ -4,31 +4,31 @@
 
 NOVA is an independent desktop launcher project. Its goal is to combine a polished, fast experience with reliable Minecraft installation, isolated instances, mod-loader support, modpack management, account security and actionable diagnostics.
 
-> Project status: early development. The launcher includes the native desktop shell, installation and launch services, instance management, loader and Modrinth integrations, and diagnostics. The separate NOVA Client module is beginning its own in-game feature set.
+> Project status: early development. The launcher includes the native desktop shell, installation and launch services, instance management, loader and Modrinth integrations, and diagnostics. The separate NOVA Client module now has a native Fabric HUD, draggable layout editor, profiles and focused performance telemetry.
 
 ## Current stack
 
 - **Desktop shell:** Tauri 2
 - **Native layer:** Rust
 - **Interface:** React + TypeScript + Vite
+- **In-game client:** separate Fabric mod under `nova-client/`
 - **Initial target:** Windows, with a cross-platform architecture
-- **Performance focus:** measurable native telemetry, bounded workloads, verified streaming downloads and low-overhead UI
 
 ## Development
 
-Install dependencies with npm install, run the desktop application with npm run tauri dev, and build the frontend with npm run build.
+Install dependencies with `npm install`, run the desktop application with `npm run tauri dev`, and build the frontend with `npm run build`.
 
 ## Project map
 
     src/                 React interface
     src-tauri/           Rust/Tauri desktop application
-    nova-client/         Native Fabric 1.21.11 in-game client mod
+    nova-client/         Fabric 1.21.11 in-game client mod
     docs/                Product strategy, architecture and roadmap
-    .github/workflows/   Continuous integration
+    .github/workflows/   Continuous integration and client release pipelines
 
 ## NOVA Client (in-game)
 
-The separate nova-client module is the first native in-game client target. It adds a draggable HUD editor, FPS/ping/coordinates/left-CPS telemetry, keystrokes, themes and local profiles. See nova-client/README.md for requirements and build steps. Its HUD renderer consumes sampled telemetry and performs no world/chunk scans or disk/network work.
+The independent `nova-client/` module provides a draggable four-panel HUD, sampled FPS/ping/CPS/coordinates/armor/facing telemetry, keystrokes, themes and local profiles. See [nova-client/README.md](nova-client/README.md) for exact requirements and build steps. The HUD renderer performs no world/chunk scans or disk/network work.
 
 ## Product principles
 
@@ -39,7 +39,7 @@ The separate nova-client module is the first native in-game client target. It ad
 5. Credentials and refresh tokens stay out of frontend storage and logs.
 6. No copied OneLauncher or OneClient code/assets. NOVA is an independent implementation.
 
-See Product strategy in docs/PRODUCT_STRATEGY.md, Architecture in docs/ARCHITECTURE.md, Performance budgets in docs/PERFORMANCE_BUDGETS.md and Roadmap in docs/ROADMAP.md.
+See Product strategy in `docs/PRODUCT_STRATEGY.md`, Architecture in `docs/ARCHITECTURE.md`, Performance budgets in `docs/PERFORMANCE_BUDGETS.md` and Roadmap in `docs/ROADMAP.md`.
 
 ## License
 

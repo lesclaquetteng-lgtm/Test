@@ -22,6 +22,7 @@ dependencies {
     mappings "net.fabricmc:yarn:" + project.yarn_mappings + ":v2"
     modImplementation "net.fabricmc:fabric-loader:" + project.loader_version
     modImplementation "net.fabricmc.fabric-api:fabric-api:" + project.fabric_api_version
+    testImplementation "org.junit.jupiter:junit-jupiter:5.11.4"
 }
 
 def novaClientVersion = project.property("mod_version").toString()
@@ -38,6 +39,10 @@ processResources {
 tasks.withType(JavaCompile).configureEach {
     options.release = 21
     options.encoding = "UTF-8"
+}
+
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
 }
 
 java {

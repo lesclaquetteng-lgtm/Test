@@ -2,6 +2,7 @@ package com.nova.client.config;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.annotations.SerializedName;
 import com.google.gson.JsonParseException;
 import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
@@ -191,7 +192,8 @@ public final class ClientConfig {
         public boolean showCps = true;
         public boolean showCoordinates = true;
         public boolean showMemory = false;
-        public boolean lowOverheadMode = true;
+        @SerializedName(value = "showFrameTimeEstimate", alternate = {"lowOverheadMode"})
+        public boolean showFrameTimeEstimate = true;
         public int statsX = 12;
         public int statsY = 12;
         public int keysX = 12;

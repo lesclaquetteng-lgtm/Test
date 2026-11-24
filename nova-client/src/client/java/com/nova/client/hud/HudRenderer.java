@@ -56,7 +56,7 @@ public final class HudRenderer {
         int rowY = y + 25;
         if (config.showFps) {
             String fps = snapshot.fps() > 0 ? snapshot.fps() + " FPS" : "-- FPS";
-            if (config.lowOverheadMode && snapshot.frameTimeMs() > 0.0f) {
+            if (config.showFrameTimeEstimate && snapshot.frameTimeMs() > 0.0f) {
                 fps += " / " + String.format(java.util.Locale.ROOT, "%.1f ms", snapshot.frameTimeMs());
             }
             drawRow(context, client, x + 10, rowY, "FRAME", fps);

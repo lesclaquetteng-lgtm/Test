@@ -120,7 +120,7 @@ public final class NovaClientScreen extends Screen {
     private void renderPerformancePage(DrawContext c, NovaConfig cfg, int mx, int my) {
         int x = contentX();
         int y = contentY();
-        drawToggle(c, x, y, "Low-overhead mode", "Displays an approximate frame-time readout.", cfg.lowOverheadMode, mx, my);
+        drawToggle(c, x, y, "Frame-time estimate", "Derive 1000/FPS; not a GPU frame timer.", cfg.showFrameTimeEstimate, mx, my);
         drawToggle(c, x, y + 40, "Memory indicator", "Show Java heap usage in the HUD.", cfg.showMemory, mx, my);
         int usable = panelWidth() - 194;
         c.fill(x, y + 104, x + usable, y + 214, CARD);
@@ -219,7 +219,7 @@ public final class NovaClientScreen extends Screen {
             }
         } else if (page == 2) {
             if (inside(mx, my, cx, cy, w - 194, 32)) {
-                cfg.lowOverheadMode = !cfg.lowOverheadMode;
+                cfg.showFrameTimeEstimate = !cfg.showFrameTimeEstimate;
                 ClientConfig.save();
                 return true;
             }
