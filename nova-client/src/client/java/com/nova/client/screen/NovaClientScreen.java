@@ -273,17 +273,17 @@ public final class NovaClientScreen extends Screen {
         int y = contentY();
         int usable = contentWidth();
         c.drawTextWithShadow(textRenderer, "NOVA ACTIONS", x, y, MUTED);
-        drawKeybindRow(c, x, y + 24, usable, 0, "Open control panel",
+        drawKeybindRow(c, x, y + 16, usable, 0, "Open control panel",
                 "Open the NOVA settings from anywhere in the game.", NovaClient.getMenuBindingName(), mx, my);
-        drawKeybindRow(c, x, y + 92, usable, 1, "Open HUD editor",
+        drawKeybindRow(c, x, y + 78, usable, 1, "Open HUD editor",
                 "Move your telemetry panels and adjust their layout.", NovaClient.getEditorBindingName(), mx, my);
-        drawKeybindRow(c, x, y + 160, usable, 2, "Toggle all HUD overlays",
+        drawKeybindRow(c, x, y + 140, usable, 2, "Toggle all HUD overlays",
                 "Quickly hide or show every NOVA HUD panel.", NovaClient.getHudToggleBindingName(), mx, my);
-        drawAction(c, x, y + 236, 164, 32, "RESET DEFAULT BINDS", mx, my);
+        drawAction(c, x, y + 208, 164, 32, "RESET DEFAULT BINDS", mx, my);
         c.drawTextWithShadow(textRenderer, "Click a binding, then press a key. Backspace clears it; Escape cancels.",
-                x, y + 284, MUTED);
+                x, y + 248, MUTED);
         if (!keybindMessage.isBlank()) {
-            c.drawTextWithShadow(textRenderer, keybindMessage, x, y + 306,
+            c.drawTextWithShadow(textRenderer, keybindMessage, x, y + 264,
                     keybindMessage.startsWith("Saved") ? ClientConfig.accentColor() : 0xFFFFA66F);
         }
     }
@@ -317,10 +317,6 @@ public final class NovaClientScreen extends Screen {
                 enabled ? ClientConfig.accentColor() : 0xFF34445A);
         c.drawTextWithShadow(textRenderer, enabled ? "ON" : "OFF", pillX + 7, y + 12,
                 enabled ? 0xFF0D1722 : TEXT);
-    }
-
-    private void drawToggle(DrawContext c, int x, int y, int usable, ToggleRow row, int mx, int my) {
-        drawToggle(c, x, y, usable, row, mx, my);
     }
 
     private void drawAction(DrawContext c, int x, int y, int w, int h, String label, int mx, int my) {
@@ -397,22 +393,22 @@ public final class NovaClientScreen extends Screen {
             else if (inside(mx, my, cx, cy + 104, 180, 32)) ClientConfig.saveProfile(cfg.profile);
             return true;
         } else {
-            if (inside(mx, my, cx + usable - 142, cy + 36, 130, 30)) {
+            if (inside(mx, my, cx + usable - 142, cy + 28, 130, 30)) {
                 rebinding = 0;
                 keybindMessage = "Press a key for the control panel.";
                 return true;
             }
-            if (inside(mx, my, cx + usable - 142, cy + 104, 130, 30)) {
+            if (inside(mx, my, cx + usable - 142, cy + 90, 130, 30)) {
                 rebinding = 1;
                 keybindMessage = "Press a key for the HUD editor.";
                 return true;
             }
-            if (inside(mx, my, cx + usable - 142, cy + 172, 130, 30)) {
+            if (inside(mx, my, cx + usable - 142, cy + 152, 130, 30)) {
                 rebinding = 2;
                 keybindMessage = "Press a key for the HUD toggle.";
                 return true;
             }
-            if (inside(mx, my, cx, cy + 236, 164, 32)) {
+            if (inside(mx, my, cx, cy + 208, 164, 32)) {
                 NovaClient.resetCustomBindings();
                 rebinding = -1;
                 keybindMessage = "Default NOVA shortcuts restored.";
