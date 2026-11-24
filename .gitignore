@@ -8,3 +8,9 @@ dist
 !.env.example
 src-tauri/target
 src-tauri/gen
+
+# NOVA Client Gradle build
+nova-client/.gradle/
+nova-client/build/
+nova-client/run/
+nova-client/.idea/

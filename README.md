@@ -4,58 +4,31 @@
 
 NOVA is an independent desktop launcher project. Its goal is to combine a polished, fast experience with reliable Minecraft installation, isolated instances, mod-loader support, modpack management, account security and actionable diagnostics.
 
-> Project status: early development. The feature branch now includes the native desktop shell, Java diagnostics, performance telemetry, a verified concurrent downloader, the official Mojang version catalogue, a verified Vanilla installer, shared asset/library storage and guarded extraction of platform-native libraries. Game launching is not implemented yet.
+> Project status: early development. The launcher includes the native desktop shell, installation and launch services, instance management, loader and Modrinth integrations, and diagnostics. The separate NOVA Client module now has a native Fabric HUD, draggable layout editor, profiles and focused performance telemetry.
 
 ## Current stack
 
 - **Desktop shell:** Tauri 2
 - **Native layer:** Rust
 - **Interface:** React + TypeScript + Vite
+- **In-game client:** separate Fabric mod under `nova-client/`
 - **Initial target:** Windows, with a cross-platform architecture
-- **Performance focus:** measurable native telemetry, bounded workloads, verified streaming downloads and low-overhead UI
-
-## Requirements
-
-- Node.js 20.19+ or 22.12+
-- npm
-- Rust stable and Cargo
-- Tauri 2 prerequisites for your operating system
 
 ## Development
 
-Install dependencies:
-
-    npm install
-
-Run the browser preview:
-
-    npm run dev
-
-Run the native desktop application:
-
-    npm run tauri dev
-
-Type-check and build the frontend:
-
-    npm run check
-    npm run build
-
-Check Rust formatting:
-
-    cd src-tauri
-    cargo fmt --all -- --check
-
-Build the desktop application:
-
-    npm run tauri build
+Install dependencies with `npm install`, run the desktop application with `npm run tauri dev`, and build the frontend with `npm run build`.
 
 ## Project map
 
     src/                 React interface
-    src/lib/             Desktop bridge and frontend utilities
     src-tauri/           Rust/Tauri desktop application
+    nova-client/         Fabric 1.21.11 in-game client mod
     docs/                Product strategy, architecture and roadmap
-    .github/workflows/   Continuous integration
+    .github/workflows/   Continuous integration and client release pipelines
+
+## NOVA Client (in-game)
+
+The independent `nova-client/` module provides a draggable four-panel HUD, sampled FPS/ping/CPS/coordinates/armor/facing telemetry, keystrokes, themes and local profiles. See [nova-client/README.md](nova-client/README.md) for exact requirements and build steps. The HUD renderer performs no world/chunk scans or disk/network work.
 
 ## Product principles
 
@@ -64,10 +37,10 @@ Build the desktop application:
 3. Each Minecraft instance owns its configuration and content.
 4. Downloads are verified and installed atomically.
 5. Credentials and refresh tokens stay out of frontend storage and logs.
-6. No copied OneLauncher code or assets. NOVA is an independent implementation.
+6. No copied OneLauncher or OneClient code/assets. NOVA is an independent implementation.
 
-See Product strategy in docs/PRODUCT_STRATEGY.md, Architecture in docs/ARCHITECTURE.md, Performance budgets in docs/PERFORMANCE_BUDGETS.md and Roadmap in docs/ROADMAP.md.
+See Product strategy in `docs/PRODUCT_STRATEGY.md`, Architecture in `docs/ARCHITECTURE.md`, Performance budgets in `docs/PERFORMANCE_BUDGETS.md` and Roadmap in `docs/ROADMAP.md`.
 
 ## License
 
-The project has not selected a distribution license yet. Do not assume OneLauncher's GPL-3.0-only license applies to NOVA. Third-party dependencies and assets must retain their own licenses and attribution.
+The launcher project has not selected a distribution license yet. The separate NOVA Client source is currently marked All Rights Reserved. Third-party dependencies and assets retain their own licenses and attribution.

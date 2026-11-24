@@ -1,0 +1,46 @@
+name: Publish NOVA Client
+
+on:
+  push:
+    tags:
+      - "nova-client-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build, test and publish Fabric client
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Java 25 (Gradle runtime; mod bytecode stays Java 21)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Build tagged client
+        working-directory: nova-client
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          VERSION="${RELEASE_TAG#nova-client-v}"
+          ./gradlew --no-daemon -Pmod_version="${VERSION}-mc1.21.11" clean build test
+          JAR="$(find build/libs -maxdepth 1 -type f -name 'nova-client-*.jar' ! -name '*-sources.jar' | head -n 1)"
+          test -n "$JAR"
+          sha256sum "$JAR" > "$JAR.sha256"
+          echo "NOVA_CLIENT_JAR=$JAR" >> "$GITHUB_ENV"
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        working-directory: nova-client
+        run: |
+          VERSION="${RELEASE_TAG#nova-client-v}"
+          gh release create "$RELEASE_TAG" "$NOVA_CLIENT_JAR" "$NOVA_CLIENT_JAR.sha256" \
+            --title "NOVA Client ${VERSION}" \
+            --notes "NOVA Client Fabric build for Minecraft 1.21.11. Java 21 bytecode. SHA-256 checksum attached."

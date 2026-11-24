@@ -1,0 +1,6 @@
+{
+  "key.category.nova-client.client": "NOVA Client",
+  "key.nova-client.menu": "Open NOVA Client",
+  "key.nova-client.editor": "Edit NOVA HUD",
+  "key.nova-client.toggle_hud": "Toggle NOVA HUD"
+}

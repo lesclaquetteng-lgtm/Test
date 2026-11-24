@@ -427,3 +427,109 @@
   .modrinth-installed-copy { flex-basis: calc(100% - 44px); }
   .modrinth-installed-actions { margin-left: auto; }
 }
+
+
+/* Native NOVA Client release/install card */
+.nova-client-release-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 210px;
+  gap: 16px 22px;
+  align-items: start;
+  padding: 20px;
+  border: 1px solid rgba(195,243,106,.20);
+  border-radius: 11px;
+  background:
+    radial-gradient(ellipse at 0% 0%, rgba(123,171,96,.13), transparent 58%),
+    linear-gradient(135deg, rgba(22,33,28,.96), rgba(13,19,17,.98));
+}
+.nova-client-release-main { min-width: 0; }
+.nova-client-release-main h2 {
+  margin: 7px 0 8px;
+  color: #edf5e8;
+  font-size: 18px;
+  letter-spacing: -.035em;
+}
+.nova-client-release-main p {
+  max-width: 760px;
+  margin: 0;
+  color: #9ba891;
+  font-size: 10px;
+  line-height: 1.7;
+}
+.nova-client-release-features {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 13px;
+}
+.nova-client-release-features span {
+  padding: 5px 7px;
+  border: 1px solid rgba(195,243,106,.13);
+  border-radius: 5px;
+  background: rgba(195,243,106,.045);
+  color: #c6dcb0;
+  font-size: 8px;
+}
+.nova-client-release-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.nova-client-install-state {
+  align-self: flex-end;
+  color: #8b987e;
+  font: 8px var(--mono);
+  text-transform: uppercase;
+}
+.nova-client-install-state.installed { color: #b8dc91; }
+.nova-client-install-button,
+.nova-client-refresh-button {
+  display: inline-flex;
+  min-height: 35px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 11px;
+  border: 1px solid rgba(195,243,106,.22);
+  border-radius: 6px;
+  background: rgba(195,243,106,.11);
+  color: #dcf1c8;
+  font-size: 9px;
+  font-weight: 750;
+  cursor: pointer;
+}
+.nova-client-install-button:hover:not(:disabled) {
+  border-color: rgba(195,243,106,.42);
+  background: rgba(195,243,106,.18);
+}
+.nova-client-refresh-button {
+  border-color: rgba(210,230,209,.09);
+  background: rgba(255,255,255,.025);
+  color: #a0ad96;
+  font-weight: 600;
+}
+.nova-client-install-button:disabled,
+.nova-client-refresh-button:disabled { opacity: .45; cursor: not-allowed; }
+.nova-client-release-actions .modrinth-provider-link {
+  align-self: flex-end;
+  margin: 2px 0 0;
+}
+.nova-client-release-footnote {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  padding-top: 11px;
+  border-top: 1px solid rgba(195,243,106,.09);
+  color: #77846f;
+  font-size: 8px;
+  line-height: 1.55;
+}
+.nova-client-release-footnote span { display: inline-block; }
+@media (max-width: 760px) {
+  .nova-client-release-card { grid-template-columns: 1fr; padding: 16px; }
+  .nova-client-install-state { align-self: flex-start; }
+  .nova-client-release-actions { max-width: 100%; }
+  .nova-client-release-actions .modrinth-provider-link { align-self: flex-start; }
+}

@@ -9,6 +9,7 @@ pub(crate) mod launch;
 pub(crate) mod loaders;
 pub(crate) mod modrinth;
 pub(crate) mod mojang;
+pub(crate) mod nova_client;
 pub(crate) mod natives;
 pub(crate) mod performance;
 
@@ -248,6 +249,8 @@ pub fn run() {
             modrinth::list_instance_mods,
             modrinth::remove_instance_mod,
             modrinth::set_instance_mod_enabled,
+            nova_client::get_nova_client_release,
+            nova_client::install_nova_client,
             instance_manager::rename_instance,
             instance_manager::duplicate_instance,
             instance_manager::delete_instance,
