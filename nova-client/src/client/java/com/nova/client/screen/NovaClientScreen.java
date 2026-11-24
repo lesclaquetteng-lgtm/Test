@@ -200,7 +200,7 @@ public final class NovaClientScreen extends Screen {
     private void renderHudPage(DrawContext c, NovaConfig cfg, int mx, int my) {
         int x = contentX();
         int usable = contentWidth();
-        List<ToggleRow> rows = filteredHudRows(cfg);
+        List<ToggleRow> rows = filteredHudRows();
         int top = hudListTop();
         int bottom = hudListBottom();
         hudScroll = Math.max(0, Math.min(hudScroll, hudMaxScroll(rows.size())));
@@ -366,7 +366,7 @@ public final class NovaClientScreen extends Screen {
             int top = hudListTop();
             int bottom = hudListBottom();
             if (!inside(mx, my, cx, top, usable, bottom - top)) return super.mouseClicked(click, doubled);
-            List<ToggleRow> rows = filteredHudRows(cfg);
+            List<ToggleRow> rows = filteredHudRows();
             for (int i = 0; i < rows.size(); i++) {
                 int rowY = top + i * ROW_STEP - hudScroll;
                 if (inside(mx, my, cx, rowY, usable, ROW_HEIGHT)) {
@@ -450,7 +450,7 @@ public final class NovaClientScreen extends Screen {
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
         if (page == 1 && inside(mouseX, mouseY, contentX(), hudListTop(),
                 contentWidth(), hudListBottom() - hudListTop())) {
-            List<ToggleRow> rows = filteredHudRows(ClientConfig.CONFIG);
+            List<ToggleRow> rows = filteredHudRows();
             hudScroll = Math.max(0, Math.min(hudMaxScroll(rows.size()),
                     hudScroll - (int) Math.round(verticalAmount * 34)));
             return true;
