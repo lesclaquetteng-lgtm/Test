@@ -18,7 +18,7 @@ public final class NovaClientScreen extends Screen {
     public NovaClientScreen() { super(Text.literal("NOVA Client")); }
 
     private int panelWidth() { return Math.max(390, Math.min(780, width - 28)); }
-    private int panelHeight() { return Math.max(320, Math.min(460, height - 28)); }
+    private int panelHeight() { return Math.max(360, Math.min(520, height - 28)); }
     private int panelX() { return (width - panelWidth()) / 2; }
     private int panelY() { return (height - panelHeight()) / 2; }
     private int contentX() { return panelX() + 176; }
@@ -112,7 +112,9 @@ public final class NovaClientScreen extends Screen {
         drawToggle(c, x, y + 144, "Network latency", "Server ping from the player list.", cfg.showPing, mx, my);
         drawToggle(c, x, y + 180, "Left CPS", "Counts attack-button click events.", cfg.showCps, mx, my);
         drawToggle(c, x, y + 216, "Coordinates", "Block position sampled on tick.", cfg.showCoordinates, mx, my);
-        drawAction(c, x, y + 264, 190, 32, "EDIT HUD LAYOUT", mx, my);
+        drawToggle(c, x, y + 252, "Armor status", "Local armor durability percentages.", cfg.showArmor, mx, my);
+        drawToggle(c, x, y + 288, "Facing", "Cardinal direction of your player.", cfg.showDirection, mx, my);
+        drawAction(c, x, y + 324, 190, 32, "EDIT HUD LAYOUT", mx, my);
     }
 
     private void renderPerformancePage(DrawContext c, NovaConfig cfg, int mx, int my) {
@@ -193,8 +195,8 @@ public final class NovaClientScreen extends Screen {
                 return true;
             }
         } else if (page == 1) {
-            int[] rows = {0, 36, 72, 108, 144, 180, 216};
-            if (inside(mx, my, cx, cy + 264, 190, 32)) {
+            int[] rows = {0, 36, 72, 108, 144, 180, 216, 252, 288};
+            if (inside(mx, my, cx, cy + 324, 190, 32)) {
                 client.setScreen(new NovaHudEditorScreen(this));
                 return true;
             }
@@ -208,6 +210,8 @@ public final class NovaClientScreen extends Screen {
                     case 4 -> cfg.showPing = !cfg.showPing;
                     case 5 -> cfg.showCps = !cfg.showCps;
                     case 6 -> cfg.showCoordinates = !cfg.showCoordinates;
+                    case 7 -> cfg.showArmor = !cfg.showArmor;
+                    case 8 -> cfg.showDirection = !cfg.showDirection;
                     default -> { }
                 }
                 ClientConfig.save();
