@@ -4,16 +4,18 @@ NOVA Client is an independent client-side Fabric mod. It does not bundle or copy
 
 ## Current feature set
 
-- **Right Shift:** open the NOVA Client control panel.
-- **Right Ctrl:** open the draggable HUD editor.
-- **F8:** toggle NOVA overlays.
+- **Right Shift (default):** open the NOVA Client control panel.
+- **Right Ctrl (default):** open the draggable HUD editor.
+- **F8 (default):** toggle NOVA overlays.
+- **Searchable HUD controls:** filter all NOVA HUD options by name or description without leaving the in-game panel.
+- **Configurable shortcuts:** rebind the menu, HUD editor and global HUD toggle in-game; Backspace clears a binding and Escape cancels capture.
 - **Statistics:** FPS, reciprocal-FPS frame-time estimate, server ping, left-click CPS, coordinates and optional Java heap usage.
 - **Keystrokes:** live WASD and jump state.
 - **Armor Status:** durability percentages for helmet, chestplate, leggings and boots.
 - **Facing:** cardinal direction.
 - **Themes:** Aurora, Amethyst and Ember.
-- **Profiles:** Default, Competitive and Minimal; each stores module toggles, theme and widget positions.
-- **Layout editor:** drag the four HUD panels independently; reset and save on release.
+- **Profiles:** Default, Competitive and Minimal; each stores module toggles, theme, widget positions and NOVA shortcuts.
+- **Layout editor:** drag and independently scale the four HUD panels from 65% to 160% with the mouse wheel; reset and persist instantly.
 - **Persistence:** atomic local JSON settings under `config/nova-client/`.
 
 ## Requirements and compatibility

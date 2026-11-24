@@ -36,6 +36,12 @@ public final class HudMath {
         return count;
     }
 
+    /** Keeps a persisted HUD widget scale finite and within the supported 65–160% range. */
+    public static float normalizeWidgetScale(float scale) {
+        if (!Float.isFinite(scale) || scale <= 0.0f) return 1.0f;
+        return Math.max(0.65f, Math.min(1.60f, scale));
+    }
+
     public static int clamp(int value, int min, int max) {
         if (min > max) throw new IllegalArgumentException("min must be less than or equal to max");
         return Math.max(min, Math.min(max, value));

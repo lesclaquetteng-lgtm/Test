@@ -23,11 +23,64 @@ public final class HudRenderer {
     }
 
     public static void renderPreview(DrawContext context, MinecraftClient client, NovaConfig config, Snapshot snapshot) {
-        if (config.showStats) renderStats(context, client, config, snapshot, config.statsX, config.statsY);
-        if (config.showKeystrokes) renderKeystrokes(context, client, config, config.keysX, config.keysY);
-        if (config.showArmor) renderArmor(context, client, snapshot, config.armorX, config.armorY);
-        if (config.showDirection) renderDirection(context, client, snapshot, config.directionX, config.directionY);
+        if (config.showStats) {
+            var matrices = context.getMatrices();
+            matrices.pushMatrix();
+            matrices.translate((float) config.statsX, (float) config.statsY);
+            matrices.scale(config.statsScale, config.statsScale);
+            try {
+                renderStats(context, client, config, snapshot, 0, 0);
+            } finally {
+                matrices.popMatrix();
+            }
+        }
+        if (config.showKeystrokes) {
+            var matrices = context.getMatrices();
+            matrices.pushMatrix();
+            matrices.translate((float) config.keysX, (float) config.keysY);
+            matrices.scale(config.keysScale, config.keysScale);
+            try {
+                renderKeystrokes(context, client, config, 0, 0);
+            } finally {
+                matrices.popMatrix();
+            }
+        }
+        if (config.showArmor) {
+            var matrices = context.getMatrices();
+            matrices.pushMatrix();
+            matrices.translate((float) config.armorX, (float) config.armorY);
+            matrices.scale(config.armorScale, config.armorScale);
+            try {
+                renderArmor(context, client, snapshot, 0, 0);
+            } finally {
+                matrices.popMatrix();
+            }
+        }
+        if (config.showDirection) {
+            var matrices = context.getMatrices();
+            matrices.pushMatrix();
+            matrices.translate((float) config.directionX, (float) config.directionY);
+            matrices.scale(config.directionScale, config.directionScale);
+            try {
+                renderDirection(context, client, snapshot, 0, 0);
+            } finally {
+                matrices.popMatrix();
+            }
+        }
     }
+
+    public static int scaleDimension(int dimension, float scale) {
+        return Math.max(1, Math.round(dimension * scale));
+    }
+
+    public static int statsWidth(NovaConfig config) { return scaleDimension(statsWidth(), config.statsScale); }
+    public static int statsHeightScaled(NovaConfig config) { return scaleDimension(statsHeight(config), config.statsScale); }
+    public static int keysWidth(NovaConfig config) { return scaleDimension(keysWidth(), config.keysScale); }
+    public static int keysHeight(NovaConfig config) { return scaleDimension(keysHeight(), config.keysScale); }
+    public static int armorWidth(NovaConfig config) { return scaleDimension(armorWidth(), config.armorScale); }
+    public static int armorHeight(NovaConfig config) { return scaleDimension(armorHeight(), config.armorScale); }
+    public static int directionWidth(NovaConfig config) { return scaleDimension(directionWidth(), config.directionScale); }
+    public static int directionHeight(NovaConfig config) { return scaleDimension(directionHeight(), config.directionScale); }
 
     public static int statsHeight(NovaConfig config) {
         int rows = 0;
