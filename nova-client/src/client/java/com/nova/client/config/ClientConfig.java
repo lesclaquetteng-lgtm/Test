@@ -2,8 +2,9 @@ package com.nova.client.config;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.google.gson.annotations.SerializedName;
 import com.google.gson.JsonParseException;
+import com.google.gson.annotations.SerializedName;
+import com.nova.client.NovaClient;
 import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -68,6 +69,7 @@ public final class ClientConfig {
             loaded.profile = name;
             CONFIG = loaded;
             save();
+            NovaClient.syncCustomBindings();
             return true;
         } catch (IOException | JsonParseException exception) {
             LOGGER.warn("Unable to load NOVA Client profile '{}'.", name, exception);
@@ -133,6 +135,9 @@ public final class ClientConfig {
     private static void normalize(NovaConfig config) {
         if (config.theme == null || !config.theme.matches("AURORA|AMETHYST|EMBER")) config.theme = "AURORA";
         if (!isValidProfileName(config.profile)) config.profile = "Default";
+        if (config.menuKey == null || config.menuKey.isBlank()) config.menuKey = "key.keyboard.right.shift";
+        if (config.editorKey == null || config.editorKey.isBlank()) config.editorKey = "key.keyboard.right.control";
+        if (config.hudToggleKey == null || config.hudToggleKey.isBlank()) config.hudToggleKey = "key.keyboard.f8";
         config.statsX = clamp(config.statsX, 0, 10000);
         config.statsY = clamp(config.statsY, 0, 10000);
         config.keysX = clamp(config.keysX, 0, 10000);
@@ -206,5 +211,8 @@ public final class ClientConfig {
         public int directionY = 280;
         public String theme = "AURORA";
         public String profile = "Default";
+        public String menuKey = "key.keyboard.right.shift";
+        public String editorKey = "key.keyboard.right.control";
+        public String hudToggleKey = "key.keyboard.f8";
     }
 }
