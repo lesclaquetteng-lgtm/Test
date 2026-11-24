@@ -444,9 +444,10 @@ mod tests {
 
     #[test]
     fn release_asset_urls_require_trusted_https_github_origin() {
-        assert!(trusted_asset_url(
-            "https://github.com/owner/repo/releases/download/v1/client.jar"
-        ).is_ok());
+        assert!(
+            trusted_asset_url("https://github.com/owner/repo/releases/download/v1/client.jar")
+                .is_ok()
+        );
         assert!(trusted_asset_url("http://github.com/owner/repo/client.jar").is_err());
         assert!(trusted_asset_url("https://github.com.attacker.invalid/client.jar").is_err());
         assert!(trusted_asset_url("https://user@github.com/owner/repo/client.jar").is_err());
