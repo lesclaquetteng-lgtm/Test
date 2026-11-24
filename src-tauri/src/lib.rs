@@ -9,8 +9,8 @@ pub(crate) mod launch;
 pub(crate) mod loaders;
 pub(crate) mod modrinth;
 pub(crate) mod mojang;
-pub(crate) mod nova_client;
 pub(crate) mod natives;
+pub(crate) mod nova_client;
 pub(crate) mod performance;
 
 #[derive(Debug, Serialize)]
