@@ -30,6 +30,8 @@ public final class NovaHudEditorScreen extends Screen {
         HudRenderer.renderPreview(context, client, cfg, ClientTelemetry.snapshot());
         if (cfg.showStats) outline(context, cfg.statsX, cfg.statsY, HudRenderer.statsWidth(), HudRenderer.statsHeight(cfg));
         if (cfg.showKeystrokes) outline(context, cfg.keysX, cfg.keysY, HudRenderer.keysWidth(), HudRenderer.keysHeight());
+        if (cfg.showArmor) outline(context, cfg.armorX, cfg.armorY, HudRenderer.armorWidth(), HudRenderer.armorHeight());
+        if (cfg.showDirection) outline(context, cfg.directionX, cfg.directionY, HudRenderer.directionWidth(), HudRenderer.directionHeight());
         drawButton(context, 20, height - 48, 132, 30, "RESET LAYOUT", mouseX, mouseY);
         drawButton(context, width - 142, height - 48, 122, 30, "DONE", mouseX, mouseY);
         context.drawTextWithShadow(textRenderer, "Keep widgets clear of the crosshair and hotbar.",
@@ -77,6 +79,16 @@ public final class NovaHudEditorScreen extends Screen {
             dragging = 2;
             return true;
         }
+        if (cfg.showArmor && x >= cfg.armorX - 2 && x <= cfg.armorX + HudRenderer.armorWidth() + 2
+                && y >= cfg.armorY - 2 && y <= cfg.armorY + HudRenderer.armorHeight() + 2) {
+            dragging = 3;
+            return true;
+        }
+        if (cfg.showDirection && x >= cfg.directionX - 2 && x <= cfg.directionX + HudRenderer.directionWidth() + 2
+                && y >= cfg.directionY - 2 && y <= cfg.directionY + HudRenderer.directionHeight() + 2) {
+            dragging = 4;
+            return true;
+        }
         return super.mouseClicked(click, doubled);
     }
 
@@ -89,9 +101,15 @@ public final class NovaHudEditorScreen extends Screen {
         if (dragging == 1) {
             cfg.statsX = clamp(cfg.statsX + dx, 2, Math.max(2, width - HudRenderer.statsWidth() - 2));
             cfg.statsY = clamp(cfg.statsY + dy, 2, Math.max(2, height - HudRenderer.statsHeight(cfg) - 2));
-        } else {
+        } else if (dragging == 2) {
             cfg.keysX = clamp(cfg.keysX + dx, 2, Math.max(2, width - HudRenderer.keysWidth() - 2));
             cfg.keysY = clamp(cfg.keysY + dy, 2, Math.max(2, height - HudRenderer.keysHeight() - 2));
+        } else if (dragging == 3) {
+            cfg.armorX = clamp(cfg.armorX + dx, 2, Math.max(2, width - HudRenderer.armorWidth() - 2));
+            cfg.armorY = clamp(cfg.armorY + dy, 2, Math.max(2, height - HudRenderer.armorHeight() - 2));
+        } else {
+            cfg.directionX = clamp(cfg.directionX + dx, 2, Math.max(2, width - HudRenderer.directionWidth() - 2));
+            cfg.directionY = clamp(cfg.directionY + dy, 2, Math.max(2, height - HudRenderer.directionHeight() - 2));
         }
         return true;
     }
