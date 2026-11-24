@@ -149,45 +149,45 @@ public final class NovaClientScreen extends Screen {
         c.drawTextWithShadow(textRenderer, NovaClient.getEditorBindingName(), x + 185, y + 251, TEXT);
     }
 
-    private List<ToggleRow> hudRows(NovaConfig cfg) {
-        return List.of(
-                new ToggleRow("Master HUD", "Show or hide every NOVA overlay.", () -> cfg.showHud,
-                        () -> cfg.showHud = !cfg.showHud),
-                new ToggleRow("Statistics panel", "FPS, ping, CPS, coordinates and heap usage.", () -> cfg.showStats,
-                        () -> cfg.showStats = !cfg.showStats),
-                new ToggleRow("Keystrokes", "Live WASD and jump state.", () -> cfg.showKeystrokes,
-                        () -> cfg.showKeystrokes = !cfg.showKeystrokes),
-                new ToggleRow("FPS counter", "Show the current client frame rate.", () -> cfg.showFps,
-                        () -> cfg.showFps = !cfg.showFps),
-                new ToggleRow("Frame-time estimate", "Show the reciprocal FPS estimate in milliseconds.",
-                        () -> cfg.showFrameTimeEstimate,
-                        () -> cfg.showFrameTimeEstimate = !cfg.showFrameTimeEstimate),
-                new ToggleRow("Network latency", "Show ping reported by the player list.", () -> cfg.showPing,
-                        () -> cfg.showPing = !cfg.showPing),
-                new ToggleRow("Left CPS", "Count left-click attack events over one second.", () -> cfg.showCps,
-                        () -> cfg.showCps = !cfg.showCps),
-                new ToggleRow("Coordinates", "Show your current block position.", () -> cfg.showCoordinates,
-                        () -> cfg.showCoordinates = !cfg.showCoordinates),
-                new ToggleRow("Memory indicator", "Show used and maximum Java heap memory.", () -> cfg.showMemory,
-                        () -> cfg.showMemory = !cfg.showMemory),
-                new ToggleRow("Armor status", "Show remaining durability for equipped armor.", () -> cfg.showArmor,
-                        () -> cfg.showArmor = !cfg.showArmor),
-                new ToggleRow("Facing direction", "Show the cardinal direction you are looking.", () -> cfg.showDirection,
-                        () -> cfg.showDirection = !cfg.showDirection)
-        );
-    }
+    private static final ToggleRow[] HUD_ROWS = {
+            new ToggleRow("Master HUD", "Show or hide every NOVA overlay.",
+                    () -> ClientConfig.CONFIG.showHud, () -> ClientConfig.CONFIG.showHud = !ClientConfig.CONFIG.showHud),
+            new ToggleRow("Statistics panel", "FPS, ping, CPS, coordinates and heap usage.",
+                    () -> ClientConfig.CONFIG.showStats, () -> ClientConfig.CONFIG.showStats = !ClientConfig.CONFIG.showStats),
+            new ToggleRow("Keystrokes", "Live WASD and jump state.",
+                    () -> ClientConfig.CONFIG.showKeystrokes, () -> ClientConfig.CONFIG.showKeystrokes = !ClientConfig.CONFIG.showKeystrokes),
+            new ToggleRow("FPS counter", "Show the current client frame rate.",
+                    () -> ClientConfig.CONFIG.showFps, () -> ClientConfig.CONFIG.showFps = !ClientConfig.CONFIG.showFps),
+            new ToggleRow("Frame-time estimate", "Show the reciprocal FPS estimate in milliseconds.",
+                    () -> ClientConfig.CONFIG.showFrameTimeEstimate,
+                    () -> ClientConfig.CONFIG.showFrameTimeEstimate = !ClientConfig.CONFIG.showFrameTimeEstimate),
+            new ToggleRow("Network latency", "Show ping reported by the player list.",
+                    () -> ClientConfig.CONFIG.showPing, () -> ClientConfig.CONFIG.showPing = !ClientConfig.CONFIG.showPing),
+            new ToggleRow("Left CPS", "Count left-click attack events over one second.",
+                    () -> ClientConfig.CONFIG.showCps, () -> ClientConfig.CONFIG.showCps = !ClientConfig.CONFIG.showCps),
+            new ToggleRow("Coordinates", "Show your current block position.",
+                    () -> ClientConfig.CONFIG.showCoordinates, () -> ClientConfig.CONFIG.showCoordinates = !ClientConfig.CONFIG.showCoordinates),
+            new ToggleRow("Memory indicator", "Show used and maximum Java heap memory.",
+                    () -> ClientConfig.CONFIG.showMemory, () -> ClientConfig.CONFIG.showMemory = !ClientConfig.CONFIG.showMemory),
+            new ToggleRow("Armor status", "Show remaining durability for equipped armor.",
+                    () -> ClientConfig.CONFIG.showArmor, () -> ClientConfig.CONFIG.showArmor = !ClientConfig.CONFIG.showArmor),
+            new ToggleRow("Facing direction", "Show the cardinal direction you are looking.",
+                    () -> ClientConfig.CONFIG.showDirection, () -> ClientConfig.CONFIG.showDirection = !ClientConfig.CONFIG.showDirection)
+    };
 
-    private List<ToggleRow> filteredHudRows(NovaConfig cfg) {
+    private final List<ToggleRow> filteredRows = new ArrayList<>();
+
+    private List<ToggleRow> filteredHudRows() {
+        filteredRows.clear();
         String query = searchField == null ? "" : searchField.getText().trim().toLowerCase(java.util.Locale.ROOT);
-        if (query.isEmpty()) return hudRows(cfg);
-        List<ToggleRow> matches = new ArrayList<>();
-        for (ToggleRow row : hudRows(cfg)) {
-            if (row.title().toLowerCase(java.util.Locale.ROOT).contains(query)
+        for (ToggleRow row : HUD_ROWS) {
+            if (query.isEmpty()
+                    || row.title().toLowerCase(java.util.Locale.ROOT).contains(query)
                     || row.description().toLowerCase(java.util.Locale.ROOT).contains(query)) {
-                matches.add(row);
+                filteredRows.add(row);
             }
         }
-        return matches;
+        return filteredRows;
     }
 
     private int hudListTop() { return contentY() + 30; }

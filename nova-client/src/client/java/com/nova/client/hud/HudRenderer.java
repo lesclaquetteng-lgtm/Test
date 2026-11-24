@@ -24,36 +24,48 @@ public final class HudRenderer {
 
     public static void renderPreview(DrawContext context, MinecraftClient client, NovaConfig config, Snapshot snapshot) {
         if (config.showStats) {
-            drawScaled(context, config.statsX, config.statsY, config.statsScale,
-                    () -> renderStats(context, client, config, snapshot, 0, 0));
+            var matrices = context.getMatrices();
+            matrices.pushMatrix();
+            matrices.translate((float) config.statsX, (float) config.statsY);
+            matrices.scale(config.statsScale, config.statsScale);
+            try {
+                renderStats(context, client, config, snapshot, 0, 0);
+            } finally {
+                matrices.popMatrix();
+            }
         }
         if (config.showKeystrokes) {
-            drawScaled(context, config.keysX, config.keysY, config.keysScale,
-                    () -> renderKeystrokes(context, client, config, 0, 0));
+            var matrices = context.getMatrices();
+            matrices.pushMatrix();
+            matrices.translate((float) config.keysX, (float) config.keysY);
+            matrices.scale(config.keysScale, config.keysScale);
+            try {
+                renderKeystrokes(context, client, config, 0, 0);
+            } finally {
+                matrices.popMatrix();
+            }
         }
         if (config.showArmor) {
-            drawScaled(context, config.armorX, config.armorY, config.armorScale,
-                    () -> renderArmor(context, client, snapshot, 0, 0));
+            var matrices = context.getMatrices();
+            matrices.pushMatrix();
+            matrices.translate((float) config.armorX, (float) config.armorY);
+            matrices.scale(config.armorScale, config.armorScale);
+            try {
+                renderArmor(context, client, snapshot, 0, 0);
+            } finally {
+                matrices.popMatrix();
+            }
         }
         if (config.showDirection) {
-            drawScaled(context, config.directionX, config.directionY, config.directionScale,
-                    () -> renderDirection(context, client, snapshot, 0, 0));
-        }
-    }
-
-    /**
-     * Applies a local transform per widget. The hot render path allocates no objects and performs
-     * no file, network, world-scan or entity-iteration work.
-     */
-    private static void drawScaled(DrawContext context, int x, int y, float scale, Runnable draw) {
-        var matrices = context.getMatrices();
-        matrices.pushMatrix();
-        try {
-            matrices.translate((float) x, (float) y);
-            matrices.scale(scale, scale);
-            draw.run();
-        } finally {
-            matrices.popMatrix();
+            var matrices = context.getMatrices();
+            matrices.pushMatrix();
+            matrices.translate((float) config.directionX, (float) config.directionY);
+            matrices.scale(config.directionScale, config.directionScale);
+            try {
+                renderDirection(context, client, snapshot, 0, 0);
+            } finally {
+                matrices.popMatrix();
+            }
         }
     }
 
