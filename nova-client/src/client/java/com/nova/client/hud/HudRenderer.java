@@ -25,6 +25,8 @@ public final class HudRenderer {
     public static void renderPreview(DrawContext context, MinecraftClient client, NovaConfig config, Snapshot snapshot) {
         if (config.showStats) renderStats(context, client, config, snapshot, config.statsX, config.statsY);
         if (config.showKeystrokes) renderKeystrokes(context, client, config, config.keysX, config.keysY);
+        if (config.showArmor) renderArmor(context, client, snapshot, config.armorX, config.armorY);
+        if (config.showDirection) renderDirection(context, client, snapshot, config.directionX, config.directionY);
     }
 
     public static int statsHeight(NovaConfig config) {
@@ -100,6 +102,39 @@ public final class HudRenderer {
         context.fill(start, spaceY, start + 78, spaceY + 8, client.options.jumpKey.isPressed() ? accent : 0xFF263449);
         context.drawTextWithShadow(client.textRenderer, "SPACE", start + 30, spaceY,
                 client.options.jumpKey.isPressed() ? 0xFF0E1824 : PRIMARY);
+    }
+
+    public static int armorWidth() { return 140; }
+    public static int armorHeight() { return 52; }
+    public static int directionWidth() { return 112; }
+    public static int directionHeight() { return 30; }
+
+    private static void renderArmor(DrawContext context, MinecraftClient client, Snapshot snapshot, int x, int y) {
+        int accent = ClientConfig.accentColor();
+        context.fill(x, y, x + armorWidth(), y + armorHeight(), PANEL);
+        context.fill(x, y, x + armorWidth(), y + 1, PANEL_EDGE);
+        context.fill(x, y, x + 2, y + armorHeight(), accent);
+        context.drawTextWithShadow(client.textRenderer, "ARMOR", x + 9, y + 6, accent);
+        drawArmorValue(context, client, "H", snapshot.helmetDurability(), x + 10, y + 23);
+        drawArmorValue(context, client, "C", snapshot.chestDurability(), x + 74, y + 23);
+        drawArmorValue(context, client, "L", snapshot.leggingsDurability(), x + 10, y + 38);
+        drawArmorValue(context, client, "B", snapshot.bootsDurability(), x + 74, y + 38);
+    }
+
+    private static void drawArmorValue(DrawContext context, MinecraftClient client, String slot, int value, int x, int y) {
+        int color = value < 0 ? SECONDARY : value > 60 ? 0xFF83E6C1 : value > 30 ? 0xFFFFCF70 : 0xFFFF7F88;
+        String label = value < 0 ? "--" : value + "%";
+        context.drawTextWithShadow(client.textRenderer, slot, x, y, SECONDARY);
+        context.drawTextWithShadow(client.textRenderer, label, x + 15, y, color);
+    }
+
+    private static void renderDirection(DrawContext context, MinecraftClient client, Snapshot snapshot, int x, int y) {
+        int accent = ClientConfig.accentColor();
+        context.fill(x, y, x + directionWidth(), y + directionHeight(), PANEL);
+        context.fill(x, y, x + directionWidth(), y + 1, PANEL_EDGE);
+        context.fill(x, y, x + 2, y + directionHeight(), accent);
+        context.drawTextWithShadow(client.textRenderer, "FACING", x + 9, y + 11, SECONDARY);
+        context.drawTextWithShadow(client.textRenderer, snapshot.direction(), x + 63, y + 11, PRIMARY);
     }
 
     private static void renderKey(DrawContext context, MinecraftClient client, int x, int y,
