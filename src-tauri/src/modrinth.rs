@@ -574,7 +574,7 @@ async fn resolve_fabric_artifact_sha1(artifact: &FabricArtifact) -> Result<Strin
     Ok(value.to_ascii_lowercase())
 }
 
-async fn read_instance_marker(
+pub(crate) async fn read_instance_marker(
     data_root: &Path,
     instance_id: &str,
 ) -> Result<(PathBuf, InstalledInstance), String> {

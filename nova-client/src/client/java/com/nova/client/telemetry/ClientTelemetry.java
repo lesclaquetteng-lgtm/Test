@@ -2,8 +2,8 @@ package com.nova.client.telemetry;
 
 import com.nova.client.util.HudMath;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.client.network.PlayerListEntry;
+import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.util.math.MathHelper;
 
 public final class ClientTelemetry {
@@ -76,7 +76,6 @@ public final class ClientTelemetry {
         if (stack.isEmpty()) return -1;
         int maximum = stack.getMaxDamage();
         if (maximum <= 0) return 100;
-        int remaining = maximum - stack.getDamage();
         return HudMath.durabilityPercent(maximum, stack.getDamage());
     }
 
