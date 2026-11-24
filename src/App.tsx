@@ -106,6 +106,8 @@ type ModrinthVersion = {
 };
 type FabricLoaderVersion = { version: string; stable: boolean };
 type InstalledModFile = { fileName: string; size: number; enabled: boolean };
+type NovaClientRelease = { version: string; releaseUrl: string; jarName: string; sizeBytes: number };
+type NovaClientInstallResult = { version: string; fileName: string; sizeBytes: number; sha256: string };
 type ModCategory = "all" | "hud" | "performance" | "pvp" | "utility" | "visuals";
 type LoaderRelease = {
   loader: "forge" | "neoforge";
@@ -1373,6 +1375,9 @@ function ModrinthModsPage({ isDesktop, onNavigate }: {
   const [removingFile, setRemovingFile] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
+  const [novaClientRelease, setNovaClientRelease] = useState<NovaClientRelease | null>(null);
+  const [checkingNovaClientRelease, setCheckingNovaClientRelease] = useState(false);
+  const [installingNovaClient, setInstallingNovaClient] = useState(false);
 
   const selectedInstance = instances.find((instance) => instance.id === selectedInstanceId) ?? null;
   const gameVersion = selectedInstance?.gameVersion || selectedInstance?.id || "";
@@ -1382,6 +1387,10 @@ function ModrinthModsPage({ isDesktop, onNavigate }: {
   const visibleInstalledMods = installedMods.filter((file) =>
     installedFilter === "all" || (installedFilter === "enabled" ? file.enabled : !file.enabled)
   );
+  const novaClientFile = installedMods.find((file) =>
+    ["nova-client.jar", "nova-client.jar.disabled"].includes(file.fileName.toLowerCase())
+  ) ?? null;
+  const novaClientCompatible = selectedInstance?.loader === "fabric" && gameVersion === "1.21.11";
 
   const refreshInstances = useCallback(async () => {
     if (!isDesktop) {
@@ -1423,6 +1432,41 @@ function ModrinthModsPage({ isDesktop, onNavigate }: {
   useEffect(() => {
     void refreshInstalledMods();
   }, [refreshInstalledMods]);
+
+  const refreshNovaClientRelease = useCallback(async () => {
+    if (!isDesktop) return;
+    setCheckingNovaClientRelease(true);
+    try {
+      setNovaClientRelease(await invoke<NovaClientRelease | null>("get_nova_client_release"));
+    } catch (cause) {
+      setError(String(cause));
+      setNovaClientRelease(null);
+    } finally {
+      setCheckingNovaClientRelease(false);
+    }
+  }, [isDesktop]);
+
+  useEffect(() => {
+    void refreshNovaClientRelease();
+  }, [refreshNovaClientRelease]);
+
+  const installNovaClient = async () => {
+    if (!selectedInstance || !novaClientRelease || !novaClientCompatible) return;
+    setInstallingNovaClient(true);
+    setError(null);
+    setNotice("");
+    try {
+      const installed = await invoke<NovaClientInstallResult>("install_nova_client", {
+        instanceId: selectedInstance.id
+      });
+      setNotice(`NOVA Client ${installed.version} installed and SHA-256 verified. Restart Minecraft to load it.`);
+      await refreshInstalledMods();
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setInstallingNovaClient(false);
+    }
+  };
 
   const searchProjects = useCallback(async () => {
     if (!isDesktop) return;
@@ -1588,6 +1632,60 @@ function ModrinthModsPage({ isDesktop, onNavigate }: {
             </button>
           )
         )}
+      </section>
+
+      <section className="nova-client-release-card">
+        <div className="nova-client-release-main">
+          <span className="section-eyebrow">NOVA CLIENT · OFFICIAL FABRIC MOD</span>
+          <h2>Your in-game client, built by NOVA.</h2>
+          <p>Install the native HUD and module suite directly into the selected profile. NOVA downloads its official GitHub release and verifies SHA-256 before replacing the client JAR.</p>
+          <div className="nova-client-release-features">
+            <span>Custom HUD editor</span>
+            <span>WASD · CPS · FPS</span>
+            <span>Armor · Facing</span>
+            <span>Profiles & themes</span>
+          </div>
+        </div>
+        <div className="nova-client-release-actions">
+          <span className={novaClientFile?.enabled ? "nova-client-install-state installed" : "nova-client-install-state"}>
+            {novaClientFile ? (novaClientFile.enabled ? "Installed" : "Installed · disabled") : (novaClientRelease ? novaClientRelease.version : checkingNovaClientRelease ? "Checking release…" : "Not published")}
+          </span>
+          <button
+            type="button"
+            className="nova-client-install-button"
+            onClick={() => void installNovaClient()}
+            disabled={!novaClientRelease || !novaClientCompatible || Boolean(novaClientFile && !novaClientFile.enabled) || installingNovaClient || checkingNovaClientRelease}
+          >
+            {installingNovaClient ? <RefreshCw size={14} className="spin" /> : <Download size={14} />}
+            {installingNovaClient ? "Verifying & installing…" : novaClientFile?.enabled ? "Update NOVA Client" : novaClientFile ? "Re-enable in Installed Mods" : novaClientRelease ? "Install NOVA Client" : "Release not available"}
+          </button>
+          <button
+            type="button"
+            className="nova-client-refresh-button"
+            onClick={() => void refreshNovaClientRelease()}
+            disabled={checkingNovaClientRelease}
+          >
+            <RefreshCw size={13} className={checkingNovaClientRelease ? "spin" : ""} />
+            Check for release
+          </button>
+          {novaClientRelease && (
+            <a href={novaClientRelease.releaseUrl} target="_blank" rel="noreferrer" className="modrinth-provider-link">
+              Release notes <ExternalLink size={12} />
+            </a>
+          )}
+        </div>
+        <div className="nova-client-release-footnote">
+          {!novaClientCompatible && (
+            <span>{selectedInstance ? "Choose a Fabric 1.21.11 profile to install NOVA Client." : "Select a local instance above."}</span>
+          )}
+          {!novaClientRelease && !checkingNovaClientRelease && (
+            <span>No tagged NOVA Client release is published yet. The release pipeline publishes one after a version tag is created.</span>
+          )}
+          {novaClientFile && !novaClientFile.enabled && (
+            <span>Use the Installed Mods list below to re-enable the disabled JAR before updating.</span>
+          )}
+          <span>Compatibility: Fabric 1.21.11 · Java 21 · Minecraft must be stopped before installation.</span>
+        </div>
       </section>
 
       <section className="modrinth-section">
