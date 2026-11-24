@@ -415,3 +415,40 @@ pub(crate) async fn install_nova_client(
         sha256: actual,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_checksum, sha256, trusted_asset_url};
+
+    #[test]
+    fn sha256_matches_known_vector() {
+        assert_eq!(
+            sha256(b"hello"),
+            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        );
+    }
+
+    #[test]
+    fn checksum_parser_accepts_sha256sum_sidecar_format() {
+        let expected = sha256(b"nova-client");
+        let sidecar = format!("{expected}  nova-client.jar\n");
+        assert_eq!(parse_checksum(sidecar.as_bytes()).unwrap(), expected);
+    }
+
+    #[test]
+    fn checksum_parser_rejects_invalid_or_empty_digests() {
+        assert!(parse_checksum(b"").is_err());
+        assert!(parse_checksum(b"not-a-digest nova-client.jar").is_err());
+        assert!(parse_checksum(b"abcd").is_err());
+    }
+
+    #[test]
+    fn release_asset_urls_require_trusted_https_github_origin() {
+        assert!(trusted_asset_url(
+            "https://github.com/owner/repo/releases/download/v1/client.jar"
+        ).is_ok());
+        assert!(trusted_asset_url("http://github.com/owner/repo/client.jar").is_err());
+        assert!(trusted_asset_url("https://github.com.attacker.invalid/client.jar").is_err());
+        assert!(trusted_asset_url("https://user@github.com/owner/repo/client.jar").is_err());
+    }
+}
