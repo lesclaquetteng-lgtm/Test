@@ -39,6 +39,15 @@ class HudMathTest {
     }
 
     @Test
+    void widgetScaleStaysFiniteAndWithinSupportedRange() {
+        assertEquals(1.0f, HudMath.normalizeWidgetScale(0.0f), 0.0001f);
+        assertEquals(1.0f, HudMath.normalizeWidgetScale(Float.NaN), 0.0001f);
+        assertEquals(0.65f, HudMath.normalizeWidgetScale(0.1f), 0.0001f);
+        assertEquals(1.25f, HudMath.normalizeWidgetScale(1.25f), 0.0001f);
+        assertEquals(1.60f, HudMath.normalizeWidgetScale(2.0f), 0.0001f);
+    }
+
+    @Test
     void clampRejectsAnInvertedRange() {
         assertEquals(0, HudMath.clamp(-4, 0, 10));
         assertEquals(10, HudMath.clamp(14, 0, 10));

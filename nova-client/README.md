@@ -15,7 +15,7 @@ NOVA Client is an independent client-side Fabric mod. It does not bundle or copy
 - **Facing:** cardinal direction.
 - **Themes:** Aurora, Amethyst and Ember.
 - **Profiles:** Default, Competitive and Minimal; each stores module toggles, theme, widget positions and NOVA shortcuts.
-- **Layout editor:** drag the four HUD panels independently; reset and save on release.
+- **Layout editor:** drag and independently scale the four HUD panels from 65% to 160% with the mouse wheel; reset and persist instantly.
 - **Persistence:** atomic local JSON settings under `config/nova-client/`.
 
 ## Requirements and compatibility

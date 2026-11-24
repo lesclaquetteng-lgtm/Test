@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonParseException;
 import com.google.gson.annotations.SerializedName;
 import com.nova.client.NovaClient;
+import com.nova.client.util.HudMath;
 import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -112,6 +113,10 @@ public final class ClientConfig {
         CONFIG.armorY = 212;
         CONFIG.directionX = 12;
         CONFIG.directionY = 280;
+        CONFIG.statsScale = 1.0f;
+        CONFIG.keysScale = 1.0f;
+        CONFIG.armorScale = 1.0f;
+        CONFIG.directionScale = 1.0f;
         save();
     }
 
@@ -146,6 +151,10 @@ public final class ClientConfig {
         config.armorY = clamp(config.armorY, 0, 10000);
         config.directionX = clamp(config.directionX, 0, 10000);
         config.directionY = clamp(config.directionY, 0, 10000);
+        config.statsScale = HudMath.normalizeWidgetScale(config.statsScale);
+        config.keysScale = HudMath.normalizeWidgetScale(config.keysScale);
+        config.armorScale = HudMath.normalizeWidgetScale(config.armorScale);
+        config.directionScale = HudMath.normalizeWidgetScale(config.directionScale);
     }
 
     private static int clamp(int value, int min, int max) {
@@ -214,5 +223,9 @@ public final class ClientConfig {
         public String menuKey = "key.keyboard.right.shift";
         public String editorKey = "key.keyboard.right.control";
         public String hudToggleKey = "key.keyboard.f8";
+        public float statsScale = 1.0f;
+        public float keysScale = 1.0f;
+        public float armorScale = 1.0f;
+        public float directionScale = 1.0f;
     }
 }
