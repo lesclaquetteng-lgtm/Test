@@ -105,6 +105,10 @@ public final class ClientConfig {
         CONFIG.statsY = 12;
         CONFIG.keysX = 12;
         CONFIG.keysY = 112;
+        CONFIG.armorX = 12;
+        CONFIG.armorY = 212;
+        CONFIG.directionX = 12;
+        CONFIG.directionY = 280;
         save();
     }
 
@@ -132,6 +136,10 @@ public final class ClientConfig {
         config.statsY = clamp(config.statsY, 0, 10000);
         config.keysX = clamp(config.keysX, 0, 10000);
         config.keysY = clamp(config.keysY, 0, 10000);
+        config.armorX = clamp(config.armorX, 0, 10000);
+        config.armorY = clamp(config.armorY, 0, 10000);
+        config.directionX = clamp(config.directionX, 0, 10000);
+        config.directionY = clamp(config.directionY, 0, 10000);
     }
 
     private static int clamp(int value, int min, int max) {
@@ -188,6 +196,12 @@ public final class ClientConfig {
         public int statsY = 12;
         public int keysX = 12;
         public int keysY = 112;
+        public boolean showArmor = false;
+        public boolean showDirection = false;
+        public int armorX = 12;
+        public int armorY = 212;
+        public int directionX = 12;
+        public int directionY = 280;
         public String theme = "AURORA";
         public String profile = "Default";
     }
